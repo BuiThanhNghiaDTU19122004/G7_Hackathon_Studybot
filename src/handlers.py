@@ -161,6 +161,8 @@ def handle_document_action(
         prompt = f"Tạo 5 câu hỏi trắc nghiệm (có 4 đáp án A,B,C,D và chỉ ra đáp án đúng) dựa vào nội dung tài liệu sau. Định dạng bằng Markdown.\n\nTài liệu:\n{text_sample}"
     elif action_type == "summary":
         prompt = f"Hãy tóm tắt các ý chính quan trọng nhất của tài liệu sau thành các gạch đầu dòng. Định dạng bằng Markdown.\n\nTài liệu:\n{text_sample}"
+    elif action_type == "flashcard":
+        prompt = f"Tạo một bộ Flashcard (tối đa 10 thẻ) dựa vào các khái niệm và thuật ngữ quan trọng trong tài liệu sau. Định dạng mỗi thẻ dưới dạng:\n**Thẻ 1**\n- Khái niệm: ...\n- Định nghĩa: ...\n\nTài liệu:\n{text_sample}"
     else:
         return {"error": "Hành động không hợp lệ."}
 

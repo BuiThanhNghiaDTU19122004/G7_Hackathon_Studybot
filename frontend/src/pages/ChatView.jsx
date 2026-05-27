@@ -192,8 +192,8 @@ const ChatView = () => {
               <div className="chip" onClick={() => handleSpecialAction('summary')}>
                 <FileText size={16} /> Tóm tắt tài liệu
               </div>
-              <div className="chip" onClick={() => setPresetInput('Giải thích khái niệm quan trọng nhất')}>
-                <BookOpen size={16} /> Giải thích khái niệm
+              <div className="chip" onClick={() => handleSpecialAction('flashcard')}>
+                <BookOpen size={16} /> Tạo Flashcard
               </div>
               <div className="chip" onClick={() => handleSpecialAction('quiz')}>
                 <AlertCircle size={16} /> Tạo trắc nghiệm
