@@ -34,9 +34,11 @@ class Config:
     # Vector
     vector_backend: str = _env("VECTOR_BACKEND", "local")
     vector_bedrock_kb_id: str = _env("VECTOR_BEDROCK_KB_ID", "")
+    vector_bedrock_data_source_id: str = _env("VECTOR_BEDROCK_DATA_SOURCE_ID", "")
 
     # Identity
     default_user_id: str = _env("DEFAULT_USER_ID", "test-user-001")
+    cognito_user_id_claim: str = _env("COGNITO_USER_ID_CLAIM", "sub")
 
     # Logging
     log_level: str = _env("LOG_LEVEL", "INFO")

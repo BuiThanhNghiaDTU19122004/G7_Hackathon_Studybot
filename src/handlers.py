@@ -17,6 +17,52 @@ QUESTION: {question}
 ANSWER:"""
 
 
+def _context_from_chunks(chunks: list[dict]) -> str:
+    return "\n\n".join(f"[chunk {i+1}] {c['text']}" for i, c in enumerate(chunks))
+
+
+def _citations_from_chunks(chunks: list[dict]) -> list[dict]:
+    return [
+        {"chunk": i + 1, "doc_id": c["doc_id"], "score": c["score"], "text": c["text"][:260]}
+        for i, c in enumerate(chunks)
+    ]
+
+
+def _fallback_local_chunks(user_id: str, vector_store, top_k: int = 8) -> list[dict]:
+    """Return recent local chunks when a task prompt has no keyword match.
+
+    The production Bedrock KB path does semantic retrieval. LocalVector is only a
+    keyword stub, so generic actions like "summarize this lecture" need a small
+    fallback to keep the local demo useful.
+    """
+    docs = getattr(vector_store, "docs", None)
+    if not docs:
+        return []
+    chunks = []
+    for chunk_id, text, md in docs:
+        if md.get("user_id") != user_id:
+            continue
+        chunks.append({
+            "text": text,
+            "doc_id": md.get("doc_id", chunk_id),
+            "score": 1.0,
+            "metadata": md,
+        })
+    return chunks[:top_k]
+
+
+def _retrieve_context(
+    user_id: str,
+    query: str,
+    vector_store,
+    top_k: int = 8,
+) -> tuple[str, list[dict]]:
+    chunks = vector_store.search(query, top_k=top_k, filter={"user_id": user_id})
+    if not chunks:
+        chunks = _fallback_local_chunks(user_id, vector_store, top_k=top_k)
+    return _context_from_chunks(chunks), _citations_from_chunks(chunks)
+
+
 def _extract_text(filename: str, data: bytes) -> str:
     """Extract plain text from PDF or .txt upload."""
     name = filename.lower()
@@ -47,8 +93,11 @@ def handle_upload(
     key = f"{user_id}/{doc_id}/{filename}"
     location = storage.put(key, data)
     text = _extract_text(filename, data)
+    kb_metadata = {"user_id": user_id, "doc_id": doc_id, "filename": filename}
+    if hasattr(storage, "put_metadata"):
+        storage.put_metadata(key, kb_metadata)
     if text.strip():
-        vector_store.ingest(doc_id=doc_id, text=text, metadata={"user_id": user_id, "filename": filename})
+        vector_store.ingest(doc_id=doc_id, text=text, metadata=kb_metadata)
     userstore.add_doc(
         user_id=user_id,
         doc_id=doc_id,
@@ -75,7 +124,11 @@ def handle_query(
     """RAG flow: retrieve user's relevant chunks → call AI with context → log + return."""
     if vector_backend == "bedrock_kb":
         # Production path: let Bedrock do retrieve + generate in one call
-        result = ai_client.retrieve_and_generate(query=question, kb_id=bedrock_kb_id)
+        result = ai_client.retrieve_and_generate(
+            query=question,
+            kb_id=bedrock_kb_id,
+            filter={"user_id": user_id},
+        )
         answer = result["answer"]
         citations = result["citations"]
     else:
@@ -85,16 +138,160 @@ def handle_query(
             answer = "No relevant content found in your uploaded documents. Upload some first."
             citations = []
         else:
-            context = "\n\n".join(f"[chunk {i+1}] {c['text']}" for i, c in enumerate(chunks))
+            context = _context_from_chunks(chunks)
             prompt = PROMPT_TEMPLATE.format(context=context, question=question)
             answer = ai_client.invoke(prompt, max_tokens=512)
-            citations = [
-                {"chunk": i + 1, "doc_id": c["doc_id"], "score": c["score"], "text": c["text"][:200]}
-                for i, c in enumerate(chunks)
-            ]
+            citations = _citations_from_chunks(chunks)
 
     userstore.log_query(user_id=user_id, query=question, answer=answer)
     return {"question": question, "answer": answer, "citations": citations}
+
+
+def handle_summarize(
+    user_id: str,
+    ai_client,
+    userstore,
+    vector_store,
+    vector_backend: str,
+    bedrock_kb_id: str,
+) -> dict:
+    task = (
+        "Summarize the uploaded lecture notes into: 1) five key ideas, "
+        "2) terms to remember, and 3) likely exam points."
+    )
+    if vector_backend == "bedrock_kb":
+        result = ai_client.retrieve_and_generate(
+            query=task,
+            kb_id=bedrock_kb_id,
+            filter={"user_id": user_id},
+        )
+        summary = result["answer"]
+        citations = result["citations"]
+    else:
+        context, citations = _retrieve_context(user_id, task, vector_store, top_k=10)
+        if not context:
+            summary = "No uploaded study material found. Upload a lecture first."
+            citations = []
+        else:
+            prompt = f"""You are StudyBot. Use ONLY the lecture context below.
+
+CONTEXT:
+{context}
+
+Create a concise study summary with these headings:
+- Key ideas
+- Terms to remember
+- Likely exam points
+
+SUMMARY:"""
+            summary = ai_client.invoke(prompt, max_tokens=700)
+    userstore.log_query(user_id=user_id, query="Generate study summary", answer=summary)
+    return {"summary": summary, "citations": citations}
+
+
+def handle_quiz(
+    user_id: str,
+    count: int,
+    difficulty: str,
+    ai_client,
+    userstore,
+    vector_store,
+    vector_backend: str,
+    bedrock_kb_id: str,
+) -> dict:
+    count = max(3, min(count, 10))
+    difficulty = difficulty if difficulty in {"easy", "medium", "hard"} else "medium"
+    task = f"Generate {count} {difficulty} quiz questions from the uploaded lecture notes."
+    if vector_backend == "bedrock_kb":
+        result = ai_client.retrieve_and_generate(
+            query=task,
+            kb_id=bedrock_kb_id,
+            filter={"user_id": user_id},
+        )
+        quiz = result["answer"]
+        citations = result["citations"]
+    else:
+        context, citations = _retrieve_context(user_id, task, vector_store, top_k=10)
+        if not context:
+            quiz = "No uploaded study material found. Upload a lecture first."
+            citations = []
+        else:
+            prompt = f"""You are StudyBot. Use ONLY the lecture context below.
+
+CONTEXT:
+{context}
+
+Generate {count} {difficulty} multiple-choice quiz questions.
+For each question include:
+- Question
+- A, B, C, D options
+- Correct answer
+- One-sentence explanation grounded in the notes
+
+QUIZ:"""
+            quiz = ai_client.invoke(prompt, max_tokens=900)
+    userstore.log_query(user_id=user_id, query=f"Generate {difficulty} quiz", answer=quiz)
+    return {"quiz": quiz, "difficulty": difficulty, "count": count, "citations": citations}
+
+
+def handle_flashcards(
+    user_id: str,
+    count: int,
+    ai_client,
+    userstore,
+    vector_store,
+    vector_backend: str,
+    bedrock_kb_id: str,
+) -> dict:
+    count = max(5, min(count, 20))
+    task = f"Generate {count} flashcards from the uploaded lecture notes."
+    if vector_backend == "bedrock_kb":
+        result = ai_client.retrieve_and_generate(
+            query=task,
+            kb_id=bedrock_kb_id,
+            filter={"user_id": user_id},
+        )
+        flashcards = result["answer"]
+        citations = result["citations"]
+    else:
+        context, citations = _retrieve_context(user_id, task, vector_store, top_k=10)
+        if not context:
+            flashcards = "No uploaded study material found. Upload a lecture first."
+            citations = []
+        else:
+            prompt = f"""You are StudyBot. Use ONLY the lecture context below.
+
+CONTEXT:
+{context}
+
+Create {count} flashcards in this format:
+Front: [term or question]
+Back: [short answer]
+
+FLASHCARDS:"""
+            flashcards = ai_client.invoke(prompt, max_tokens=800)
+    userstore.log_query(user_id=user_id, query="Generate flashcards", answer=flashcards)
+    return {"flashcards": flashcards, "count": count, "citations": citations}
+
+
+def handle_study_plan(user_id: str, userstore) -> dict:
+    docs = userstore.list_docs(user_id)
+    recent = userstore.recent_queries(user_id, limit=5)
+    total_chars = sum(int(d.get("chars") or 0) for d in docs)
+    plan = [
+        "Review the newest uploaded document for 15 minutes.",
+        "Ask StudyBot 3 questions about weak points.",
+        "Generate flashcards and review the missed concepts.",
+        "Take a short quiz, then re-read the cited chunks for incorrect answers.",
+    ]
+    if len(docs) >= 3:
+        plan.append("Compare the top ideas across your uploaded documents.")
+    return {
+        "docs_uploaded": len(docs),
+        "recent_questions": len(recent),
+        "total_chars": total_chars,
+        "plan": plan,
+    }
 
 
 def handle_list_docs(user_id: str, userstore) -> dict:

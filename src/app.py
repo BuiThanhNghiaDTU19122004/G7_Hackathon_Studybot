@@ -8,6 +8,8 @@ Runs on:
 
 The choice is yours. Code stays the same.
 """
+import base64
+import json
 from pathlib import Path
 
 from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
@@ -41,7 +43,26 @@ userstore = factory.make_userstore()
 vector_store = factory.make_vector()
 
 
-def _resolve_user_id(x_user_id: str | None) -> str:
+def _jwt_claims_unverified(authorization: str | None) -> dict:
+    """Decode claims after API Gateway/Cognito has validated the JWT.
+
+    This function does not verify signatures by itself. In production, configure
+    API Gateway JWT authorizer with your Cognito User Pool issuer/audience.
+    """
+    if not authorization or not authorization.lower().startswith("bearer "):
+        return {}
+    token = authorization.split(" ", 1)[1].strip()
+    parts = token.split(".")
+    if len(parts) < 2:
+        return {}
+    payload = parts[1] + "=" * (-len(parts[1]) % 4)
+    try:
+        return json.loads(base64.urlsafe_b64decode(payload.encode("utf-8")))
+    except Exception:
+        return {}
+
+
+def _resolve_user_id(x_user_id: str | None, authorization: str | None = None) -> str:
     """Auth abstraction: extract user_id from header, fall back to default for local dev.
 
     In production you populate X-User-Id from:
@@ -49,11 +70,21 @@ def _resolve_user_id(x_user_id: str | None) -> str:
       - Signed URL claim
       - Custom auth Lambda
     """
-    return x_user_id or config.default_user_id
+    claims = _jwt_claims_unverified(authorization)
+    return x_user_id or claims.get(config.cognito_user_id_claim) or config.default_user_id
 
 
 class QueryRequest(BaseModel):
     question: str
+
+
+class QuizRequest(BaseModel):
+    count: int = 5
+    difficulty: str = "medium"
+
+
+class FlashcardRequest(BaseModel):
+    count: int = 8
 
 
 @app.get("/health")
@@ -73,8 +104,9 @@ def health() -> dict:
 async def upload(
     file: UploadFile = File(...),
     x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
 ) -> dict:
-    user_id = _resolve_user_id(x_user_id)
+    user_id = _resolve_user_id(x_user_id, authorization)
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="Empty file")
@@ -89,8 +121,12 @@ async def upload(
 
 
 @app.post("/query")
-def query(req: QueryRequest, x_user_id: str | None = Header(default=None)) -> dict:
-    user_id = _resolve_user_id(x_user_id)
+def query(
+    req: QueryRequest,
+    x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user_id = _resolve_user_id(x_user_id, authorization)
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Empty question")
     return handlers.handle_query(
@@ -104,14 +140,79 @@ def query(req: QueryRequest, x_user_id: str | None = Header(default=None)) -> di
     )
 
 
+@app.post("/summarize")
+def summarize(
+    x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    return handlers.handle_summarize(
+        user_id=_resolve_user_id(x_user_id, authorization),
+        ai_client=ai_client,
+        userstore=userstore,
+        vector_store=vector_store,
+        vector_backend=config.vector_backend,
+        bedrock_kb_id=config.vector_bedrock_kb_id,
+    )
+
+
+@app.post("/quiz")
+def quiz(
+    req: QuizRequest,
+    x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    return handlers.handle_quiz(
+        user_id=_resolve_user_id(x_user_id, authorization),
+        count=req.count,
+        difficulty=req.difficulty,
+        ai_client=ai_client,
+        userstore=userstore,
+        vector_store=vector_store,
+        vector_backend=config.vector_backend,
+        bedrock_kb_id=config.vector_bedrock_kb_id,
+    )
+
+
+@app.post("/flashcards")
+def flashcards(
+    req: FlashcardRequest,
+    x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    return handlers.handle_flashcards(
+        user_id=_resolve_user_id(x_user_id, authorization),
+        count=req.count,
+        ai_client=ai_client,
+        userstore=userstore,
+        vector_store=vector_store,
+        vector_backend=config.vector_backend,
+        bedrock_kb_id=config.vector_bedrock_kb_id,
+    )
+
+
+@app.get("/study-plan")
+def study_plan(
+    x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    return handlers.handle_study_plan(_resolve_user_id(x_user_id, authorization), userstore)
+
+
 @app.get("/docs/list")
-def list_docs(x_user_id: str | None = Header(default=None)) -> dict:
-    return handlers.handle_list_docs(_resolve_user_id(x_user_id), userstore)
+def list_docs(
+    x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    return handlers.handle_list_docs(_resolve_user_id(x_user_id, authorization), userstore)
 
 
 @app.get("/queries/recent")
-def recent(x_user_id: str | None = Header(default=None), limit: int = 10) -> dict:
-    return handlers.handle_recent_queries(_resolve_user_id(x_user_id), userstore, limit=limit)
+def recent(
+    x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+    limit: int = 10,
+) -> dict:
+    return handlers.handle_recent_queries(_resolve_user_id(x_user_id, authorization), userstore, limit=limit)
 
 
 # ---- Static frontend ----

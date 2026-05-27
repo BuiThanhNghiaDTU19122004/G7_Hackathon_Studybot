@@ -21,18 +21,31 @@ class BedrockKBVector:
     Bedrock console or S3 → KB sync pipeline you set up separately.
     """
 
-    def __init__(self, kb_id: str, region: str):
+    def __init__(self, kb_id: str, data_source_id: str, region: str):
         import boto3
         if not kb_id:
             raise ValueError("VECTOR_BEDROCK_KB_ID must be set for Bedrock KB backend")
         self.kb_id = kb_id
+        self.data_source_id = data_source_id
         self.agent_runtime = boto3.client("bedrock-agent-runtime", region_name=region)
+        self.agent = boto3.client("bedrock-agent", region_name=region)
 
     def ingest(self, doc_id: str, text: str, metadata: Optional[dict] = None) -> None:
         # Ingestion is typically S3-event driven. Trigger a manual sync if needed
         # via StartIngestionJob — but the doc must already be in the KB's S3 source.
         # This adapter assumes upstream code uploaded to S3 already.
-        pass
+        if not self.data_source_id:
+            raise ValueError(
+                "VECTOR_BEDROCK_DATA_SOURCE_ID must be set to auto-sync Bedrock KB after upload"
+            )
+        try:
+            self.agent.start_ingestion_job(
+                knowledgeBaseId=self.kb_id,
+                dataSourceId=self.data_source_id,
+                description=f"StudyBot upload sync for doc_id={doc_id}",
+            )
+        except self.agent.exceptions.ConflictException:
+            return
 
     def search(self, query: str, top_k: int = 5, filter: Optional[dict] = None) -> list:
         kwargs = {

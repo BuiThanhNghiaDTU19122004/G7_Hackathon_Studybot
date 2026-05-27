@@ -2,9 +2,11 @@
 
 Interface:
     put(key, data) -> str (returns location URI)
+    put_metadata(key, metadata) -> str
     get(key) -> bytes
     list(prefix="") -> list[str]
 """
+import json
 from pathlib import Path
 from typing import Any
 
@@ -20,6 +22,21 @@ class S3Storage:
     def put(self, key: str, data: bytes) -> str:
         self.s3.put_object(Bucket=self.bucket, Key=key, Body=data)
         return f"s3://{self.bucket}/{key}"
+
+    def put_metadata(self, key: str, metadata: dict) -> str:
+        sidecar_key = f"{key}.metadata.json"
+        attributes = [
+            {"key": str(k), "value": {"type": "STRING", "stringValue": str(v)}}
+            for k, v in metadata.items()
+            if v is not None
+        ]
+        self.s3.put_object(
+            Bucket=self.bucket,
+            Key=sidecar_key,
+            Body=json.dumps({"metadataAttributes": attributes}).encode("utf-8"),
+            ContentType="application/json",
+        )
+        return f"s3://{self.bucket}/{sidecar_key}"
 
     def get(self, key: str) -> bytes:
         resp = self.s3.get_object(Bucket=self.bucket, Key=key)
@@ -41,6 +58,12 @@ class LocalStorage:
         path = self.base / key
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)
+        return f"file://{path.resolve()}"
+
+    def put_metadata(self, key: str, metadata: dict) -> str:
+        path = self.base / f"{key}.metadata.json"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text(json.dumps(metadata), encoding="utf-8")
         return f"file://{path.resolve()}"
 
     def get(self, key: str) -> bytes:

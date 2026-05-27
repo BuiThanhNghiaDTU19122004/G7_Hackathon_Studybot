@@ -47,7 +47,11 @@ _local_vector_singleton: vector.LocalVector | None = None
 def make_vector():
     global _local_vector_singleton
     if config.vector_backend == "bedrock_kb":
-        return vector.BedrockKBVector(kb_id=config.vector_bedrock_kb_id, region=config.aws_region)
+        return vector.BedrockKBVector(
+            kb_id=config.vector_bedrock_kb_id,
+            data_source_id=config.vector_bedrock_data_source_id,
+            region=config.aws_region,
+        )
     if config.vector_backend == "local":
         if _local_vector_singleton is None:
             _local_vector_singleton = vector.LocalVector()

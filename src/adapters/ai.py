@@ -2,7 +2,7 @@
 
 Interface:
     invoke(prompt, **kwargs) -> str
-    retrieve_and_generate(query, kb_id="") -> dict with {"answer": str, "citations": list}
+    retrieve_and_generate(query, kb_id="", filter=None) -> dict with {"answer": str, "citations": list}
 """
 from typing import Any
 
@@ -26,18 +26,30 @@ class BedrockAI:
         )
         return resp["output"]["message"]["content"][0]["text"]
 
-    def retrieve_and_generate(self, query: str, kb_id: str = "") -> dict:
+    def retrieve_and_generate(self, query: str, kb_id: str = "", filter: dict | None = None) -> dict:
         if not kb_id:
             raise ValueError("VECTOR_BEDROCK_KB_ID must be set for Bedrock KB retrieve_and_generate")
         model_arn = f"arn:aws:bedrock:{self.region}::foundation-model/{self.model_id}"
+        kb_config = {
+            "knowledgeBaseId": kb_id,
+            "modelArn": model_arn,
+        }
+        if filter:
+            kb_config["retrievalConfiguration"] = {
+                "vectorSearchConfiguration": {
+                    "filter": {
+                        "andAll": [
+                            {"equals": {"key": str(k), "value": str(v)}}
+                            for k, v in filter.items()
+                        ]
+                    }
+                }
+            }
         resp = self.agent_runtime.retrieve_and_generate(
             input={"text": query},
             retrieveAndGenerateConfiguration={
                 "type": "KNOWLEDGE_BASE",
-                "knowledgeBaseConfiguration": {
-                    "knowledgeBaseId": kb_id,
-                    "modelArn": model_arn,
-                },
+                "knowledgeBaseConfiguration": kb_config,
             },
         )
         return {
@@ -63,7 +75,7 @@ class LocalAI:
             "Set AI_BACKEND=bedrock + AWS credentials for real Bedrock output."
         )
 
-    def retrieve_and_generate(self, query: str, kb_id: str = "") -> dict:
+    def retrieve_and_generate(self, query: str, kb_id: str = "", filter: dict | None = None) -> dict:
         return {
             "answer": (
                 f"[LOCAL_AI_STUB] Query received: {query!r}. "
