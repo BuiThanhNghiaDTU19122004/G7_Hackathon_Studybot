@@ -30,7 +30,6 @@ def _citations_from_chunks(chunks: list[dict]) -> list[dict]:
 
 def _fallback_local_chunks(user_id: str, vector_store, top_k: int = 8) -> list[dict]:
     """Return recent local chunks when a task prompt has no keyword match.
-
     The production Bedrock KB path does semantic retrieval. LocalVector is only a
     keyword stub, so generic actions like "summarize this lecture" need a small
     fallback to keep the local demo useful.
