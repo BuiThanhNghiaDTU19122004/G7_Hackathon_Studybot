@@ -1,27 +1,104 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
+import { signUp, confirmSignUp } from 'aws-amplify/auth';
 import '../auth.css';
-import { UserPlus } from 'lucide-react';
+import { UserPlus, Mail } from 'lucide-react';
 
 const Register = () => {
-  const [username, setUsername] = useState('');
+  const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [error, setError] = useState(false);
+  const [code, setCode] = useState('');
+  const [error, setError] = useState('');
+  const [step, setStep] = useState(0);
+  const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
 
-  const handleRegister = (e) => {
+  const handleRegister = async (e) => {
     e.preventDefault();
+    setError('');
+
     if (password !== confirmPassword) {
-      setError(true);
+      setError('Mật khẩu không khớp!');
       return;
     }
     
-    if (username.trim() && password) {
-      localStorage.setItem('studybot_user', username.trim());
-      navigate('/');
+    setIsLoading(true);
+    try {
+      const { isSignUpComplete, nextStep } = await signUp({
+        username: email,
+        password,
+        options: {
+          userAttributes: {
+            email,
+          }
+        }
+      });
+
+      if (nextStep.signUpStep === 'CONFIRM_SIGN_UP') {
+        setStep(1);
+      } else if (isSignUpComplete) {
+        navigate('/login');
+      }
+    } catch (err) {
+      setError(err.message || 'Lỗi đăng ký');
+    } finally {
+      setIsLoading(false);
     }
   };
+
+  const handleConfirm = async (e) => {
+    e.preventDefault();
+    setError('');
+    setIsLoading(true);
+
+    try {
+      const { isSignUpComplete } = await confirmSignUp({
+        username: email,
+        confirmationCode: code
+      });
+      if (isSignUpComplete) {
+        navigate('/login');
+      }
+    } catch (err) {
+      setError(err.message || 'Mã xác thực không đúng');
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  if (step === 1) {
+    return (
+      <div className="auth-card">
+        <div className="auth-header">
+          <div className="logo">
+            <Mail color="white" size={24} />
+          </div>
+          <h1>Xác thực Email</h1>
+          <p>Mã xác thực 6 số đã được gửi tới {email}</p>
+        </div>
+        <form onSubmit={handleConfirm}>
+          <div className="form-group">
+            <label htmlFor="code">Mã xác thực</label>
+            <input 
+              type="text" 
+              id="code" 
+              className="form-control" 
+              placeholder="Nhập mã OTP" 
+              value={code}
+              onChange={(e) => setCode(e.target.value)}
+              required 
+              autoFocus 
+            />
+          </div>
+          {error && <div className="error-msg" style={{ display: 'block' }}>{error}</div>}
+          <button type="submit" className="btn-primary" disabled={isLoading}>
+            {isLoading ? 'Đang xác thực...' : 'Xác thực'}
+          </button>
+        </form>
+      </div>
+    );
+  }
 
   return (
     <div className="auth-card">
@@ -35,14 +112,14 @@ const Register = () => {
       
       <form onSubmit={handleRegister}>
         <div className="form-group">
-          <label htmlFor="username">Tên đăng nhập</label>
+          <label htmlFor="email">Email</label>
           <input 
-            type="text" 
-            id="username" 
+            type="email" 
+            id="email" 
             className="form-control" 
-            placeholder="Chọn tên đăng nhập" 
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
+            placeholder="Địa chỉ email của bạn" 
+            value={email}
+            onChange={(e) => setEmail(e.target.value)}
             required 
             autoFocus 
           />
@@ -57,7 +134,7 @@ const Register = () => {
             value={password}
             onChange={(e) => setPassword(e.target.value)}
             required 
-            minLength="6" 
+            minLength="8" 
           />
         </div>
         <div className="form-group">
@@ -70,11 +147,13 @@ const Register = () => {
             value={confirmPassword}
             onChange={(e) => setConfirmPassword(e.target.value)}
             required 
-            minLength="6" 
+            minLength="8" 
           />
         </div>
-        {error && <div className="error-msg" style={{ display: 'block' }}>Mật khẩu không khớp!</div>}
-        <button type="submit" className="btn-primary">Đăng ký</button>
+        {error && <div className="error-msg" style={{ display: 'block' }}>{error}</div>}
+        <button type="submit" className="btn-primary" disabled={isLoading}>
+          {isLoading ? 'Đang tạo...' : 'Đăng ký'}
+        </button>
       </form>
       
       <div className="auth-footer">

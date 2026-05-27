@@ -1,13 +1,23 @@
-const getUserId = () => localStorage.getItem('studybot_user') || 'test-user-001';
+import { fetchAuthSession, getCurrentUser } from 'aws-amplify/auth';
 
-// Vite in production might have an empty API_BASE if it's served from the same domain
-// In dev, the proxy handles it.
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 
 export const callApi = async (path, opts = {}) => {
-  const userId = getUserId();
   const headers = new Headers(opts.headers || {});
-  headers.set('X-User-Id', userId);
+  
+  try {
+    const session = await fetchAuthSession();
+    const token = session.tokens?.idToken?.toString();
+    const user = await getCurrentUser();
+    
+    headers.set('X-User-Id', user.username || 'cognito-user');
+    
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+  } catch (err) {
+    console.warn('Không lấy được phiên đăng nhập', err);
+  }
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...opts,
@@ -23,15 +33,27 @@ export const callApi = async (path, opts = {}) => {
 };
 
 export const uploadFile = async (file) => {
-  const userId = getUserId();
   const formData = new FormData();
   formData.append('file', file);
+  
+  const headers = new Headers();
+  
+  try {
+    const session = await fetchAuthSession();
+    const token = session.tokens?.idToken?.toString();
+    const user = await getCurrentUser();
+    
+    headers.set('X-User-Id', user.username || 'cognito-user');
+    if (token) {
+      headers.set('Authorization', `Bearer ${token}`);
+    }
+  } catch (err) {
+    console.warn('Không lấy được phiên đăng nhập', err);
+  }
 
   const response = await fetch(`${API_BASE}/upload`, {
     method: 'POST',
-    headers: {
-      'X-User-Id': userId
-    },
+    headers,
     body: formData
   });
 

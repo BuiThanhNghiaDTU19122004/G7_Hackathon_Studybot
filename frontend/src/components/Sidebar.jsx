@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { signOut } from 'aws-amplify/auth';
 import { LogOut, Plus, FileText, Menu, Sparkles, X } from 'lucide-react';
 
 const Sidebar = ({ isOpen, setIsOpen, docs }) => {
@@ -11,8 +12,12 @@ const Sidebar = ({ isOpen, setIsOpen, docs }) => {
     setChatHistory(history);
   }, []);
 
-  const handleLogout = () => {
-    localStorage.removeItem('studybot_user');
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } catch (error) {
+      console.error('Lỗi đăng xuất:', error);
+    }
     navigate('/login');
   };
 
