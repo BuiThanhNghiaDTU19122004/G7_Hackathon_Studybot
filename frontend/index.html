@@ -1,0 +1,735 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>StudyBot — AI Study Buddy</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+<style>
+  /* ---------- Design tokens (Dark Mode Default) ---------- */
+  :root {
+    --accent: #6366f1;          
+    --accent-light: rgba(99, 102, 241, 0.15);
+    --accent-dark: #4338ca;
+    --accent-glow: rgba(99, 102, 241, 0.5);
+    
+    /* Dark Theme */
+    --bg: #0f172a;             
+    --bg-gradient: linear-gradient(135deg, #0f172a 0%, #1e1b4b 100%);
+    --card: rgba(30, 41, 59, 0.6); 
+    --card-border: rgba(255, 255, 255, 0.1);
+    --text: #f8fafc;           
+    --muted: #94a3b8;          
+    --border: rgba(255, 255, 255, 0.15);
+    --topbar-bg: rgba(15, 23, 42, 0.7);
+    --drop-bg: rgba(0, 0, 0, 0.2);
+    --input-bg: rgba(0, 0, 0, 0.3);
+    --input-focus: rgba(0, 0, 0, 0.5);
+    --input-placeholder: rgba(255, 255, 255, 0.3);
+    --ghost-btn-bg: rgba(255, 255, 255, 0.05);
+    --ghost-btn-hover: rgba(255, 255, 255, 0.1);
+    --ghost-btn-border: rgba(255,255,255,0.3);
+    --answer-bg: rgba(0, 0, 0, 0.2);
+    --citation-bg: rgba(255, 255, 255, 0.03);
+    --doc-bg: rgba(0, 0, 0, 0.2);
+    --toast-bg: rgba(30, 41, 59, 0.95);
+    --pre-bg: rgba(0, 0, 0, 0.4);
+    --pre-text: #cbd5e1;
+    --empty-bg: rgba(0,0,0,0.1);
+    --spinner-bg: rgba(255,255,255,0.2);
+    --glow-opacity: 1;
+    
+    --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --shadow-lg: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.04);
+    --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.3);
+    --radius: 16px;
+    --radius-sm: 10px;
+    --success: #10b981;
+    --warn: #f59e0b;
+    --error: #ef4444;
+  }
+
+  [data-theme="light"] {
+    /* Light Theme */
+    --bg: #f8fafc;
+    --bg-gradient: linear-gradient(135deg, #f8fafc 0%, #e2e8f0 100%);
+    --card: rgba(255, 255, 255, 0.8);
+    --card-border: rgba(0, 0, 0, 0.05);
+    --text: #0f172a;
+    --muted: #64748b;
+    --border: rgba(0, 0, 0, 0.1);
+    --topbar-bg: rgba(255, 255, 255, 0.85);
+    --drop-bg: rgba(255, 255, 255, 0.5);
+    --input-bg: rgba(255, 255, 255, 1);
+    --input-focus: #ffffff;
+    --input-placeholder: rgba(0, 0, 0, 0.3);
+    --ghost-btn-bg: transparent;
+    --ghost-btn-hover: rgba(0, 0, 0, 0.05);
+    --ghost-btn-border: rgba(0,0,0,0.1);
+    --answer-bg: rgba(255, 255, 255, 0.6);
+    --citation-bg: rgba(255, 255, 255, 1);
+    --doc-bg: rgba(255, 255, 255, 0.6);
+    --toast-bg: rgba(255, 255, 255, 0.95);
+    --pre-bg: rgba(241, 245, 249, 1);
+    --pre-text: #334155;
+    --empty-bg: rgba(255,255,255,0.4);
+    --spinner-bg: rgba(0,0,0,0.1);
+    --glow-opacity: 0.6;
+    
+    --shadow-sm: 0 1px 2px rgba(15, 23, 42, .06);
+    --shadow: 0 1px 3px rgba(15, 23, 42, .08), 0 1px 2px rgba(15, 23, 42, .04);
+    --shadow-lg: 0 10px 30px -10px rgba(15, 23, 42, .15);
+    --shadow-glow: 0 0 20px rgba(99, 102, 241, 0.2);
+  }
+
+  /* ---------- Reset ---------- */
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    font-family: 'Outfit', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 15px;
+    line-height: 1.6;
+    color: var(--text);
+    background: var(--bg-gradient);
+    background-attachment: fixed;
+    min-height: 100vh;
+    transition: background 0.4s ease, color 0.4s ease;
+  }
+  
+  /* Decorative Background Glow */
+  body::before {
+    content: '';
+    position: fixed;
+    top: -10%; left: -10%;
+    width: 50vw; height: 50vw;
+    background: radial-gradient(circle, rgba(99,102,241,0.15) 0%, rgba(0,0,0,0) 70%);
+    border-radius: 50%;
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--glow-opacity);
+    transition: opacity 0.4s ease;
+  }
+  body::after {
+    content: '';
+    position: fixed;
+    bottom: -10%; right: -10%;
+    width: 60vw; height: 60vw;
+    background: radial-gradient(circle, rgba(139,92,246,0.1) 0%, rgba(0,0,0,0) 70%);
+    border-radius: 50%;
+    z-index: -1;
+    pointer-events: none;
+    opacity: var(--glow-opacity);
+    transition: opacity 0.4s ease;
+  }
+
+  /* ---------- Topbar ---------- */
+  .topbar {
+    background: var(--topbar-bg);
+    backdrop-filter: blur(12px);
+    -webkit-backdrop-filter: blur(12px);
+    border-bottom: 1px solid var(--card-border);
+    color: var(--text);
+    padding: 1.25rem 2rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 2rem;
+    flex-wrap: wrap;
+    position: sticky;
+    top: 0;
+    z-index: 50;
+    transition: background 0.4s ease, color 0.4s ease;
+  }
+  .brand { display: flex; align-items: center; gap: 1rem; }
+  .brand .logo {
+    width: 48px; height: 48px;
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    border-radius: 12px;
+    display: grid; place-items: center;
+    font-size: 24px;
+    box-shadow: var(--shadow-glow);
+  }
+  .brand h1 { margin: 0; font-size: 1.3rem; font-weight: 600; letter-spacing: -0.02em; color: var(--text); }
+  .brand p { margin: 0.1rem 0 0; color: var(--muted); font-size: 0.85rem; }
+  .top-actions { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+  .status-pills { display: flex; gap: 0.5rem; flex-wrap: wrap; }
+  .pill {
+    background: var(--ghost-btn-bg);
+    border: 1px solid var(--border);
+    padding: 0.35rem 0.75rem;
+    border-radius: 100px;
+    font-size: 0.75rem;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    backdrop-filter: blur(8px);
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    transition: all 0.2s ease;
+    color: var(--text);
+  }
+  .pill:hover { background: var(--ghost-btn-hover); }
+  .pill.local { border-color: rgba(245, 158, 11, 0.5); color: #d97706; }
+  .pill.remote { border-color: rgba(16, 185, 129, 0.5); color: #059669; }
+  .pill.error { border-color: rgba(239, 68, 68, 0.5); color: #dc2626; }
+  [data-theme="dark"] .pill.local { color: #fcd34d; }
+  [data-theme="dark"] .pill.remote { color: #6ee7b7; }
+  [data-theme="dark"] .pill.error { color: #fca5a5; }
+
+  /* Theme Toggle */
+  .theme-toggle-btn {
+    padding: 0.4rem;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .theme-toggle-btn svg { width: 22px; height: 22px; }
+
+  /* ---------- Layout ---------- */
+  .container {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 2.5rem 1.5rem 4rem;
+    display: grid;
+    gap: 1.5rem;
+  }
+  .card {
+    background: var(--card);
+    backdrop-filter: blur(16px);
+    -webkit-backdrop-filter: blur(16px);
+    border: 1px solid var(--card-border);
+    border-radius: var(--radius);
+    padding: 1.75rem;
+    box-shadow: var(--shadow);
+    transition: transform 0.3s ease, box-shadow 0.3s ease, background 0.4s ease, border-color 0.4s ease;
+  }
+  .card:hover {
+    transform: translateY(-2px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--border);
+  }
+  .card-header {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 1.25rem;
+    gap: 1rem;
+    border-bottom: 1px solid var(--card-border);
+    padding-bottom: 1rem;
+    transition: border-color 0.4s ease;
+  }
+  .card-header h2 { margin: 0; font-size: 1.2rem; font-weight: 500; letter-spacing: -0.01em; display: flex; align-items: center; }
+  .card-header .step {
+    background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+    color: white;
+    width: 28px; height: 28px;
+    border-radius: 100px;
+    display: inline-grid; place-items: center;
+    font-size: 0.85rem; font-weight: 600;
+    margin-right: 0.75rem;
+    flex-shrink: 0;
+    box-shadow: 0 2px 10px rgba(99, 102, 241, 0.4);
+  }
+  .card-header .meta { color: var(--muted); font-size: 0.85rem; font-weight: 300; }
+
+  /* ---------- Drop zone ---------- */
+  .drop {
+    border: 2px dashed var(--border);
+    border-radius: var(--radius);
+    padding: 2.5rem 1rem;
+    text-align: center;
+    transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    background: var(--drop-bg);
+    display: block;
+  }
+  .drop:hover { 
+    border-color: var(--accent); 
+    background: var(--accent-light); 
+    box-shadow: inset 0 0 20px rgba(99,102,241,0.05);
+  }
+  .drop.dragover { 
+    border-color: var(--accent); 
+    background: var(--accent-light); 
+    transform: scale(1.02); 
+  }
+  .drop svg { width: 48px; height: 48px; color: var(--accent); margin-bottom: 1rem; opacity: 0.8; transition: transform 0.3s ease; }
+  .drop:hover svg { transform: translateY(-4px); opacity: 1; }
+  .drop p { margin: 0.3rem 0; color: var(--muted); font-size: 1rem; }
+  .drop .browse { color: var(--accent); font-weight: 500; text-decoration: none; cursor: pointer; position: relative; }
+  .drop .browse::after { content: ''; position: absolute; bottom: -2px; left: 0; width: 100%; height: 1px; background: var(--accent); transform: scaleX(0); transition: transform 0.2s ease; }
+  .drop:hover .browse::after { transform: scaleX(1); }
+  .drop input[type=file] { display: none; }
+
+  /* ---------- Inputs / buttons ---------- */
+  .input-row { display: flex; gap: 0.75rem; }
+  input[type=text] {
+    flex: 1;
+    padding: 0.75rem 1.2rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    font: inherit;
+    color: var(--text);
+    background: var(--input-bg);
+    transition: all 0.2s ease;
+  }
+  input[type=text]::placeholder { color: var(--input-placeholder); }
+  input[type=text]:focus {
+    outline: none;
+    border-color: var(--accent);
+    background: var(--input-focus);
+    box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.25);
+  }
+  button {
+    font: inherit;
+    border: 0;
+    border-radius: var(--radius-sm);
+    padding: 0.75rem 1.5rem;
+    cursor: pointer;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    font-weight: 500;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.5rem;
+  }
+  button.primary {
+    background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+    color: white;
+    box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+  }
+  button.primary:hover:not(:disabled) { 
+    background: linear-gradient(135deg, #4f46e5 0%, #4338ca 100%);
+    box-shadow: 0 6px 16px rgba(99, 102, 241, 0.4);
+    transform: translateY(-1px);
+  }
+  button.primary:active:not(:disabled) { transform: translateY(1px); box-shadow: 0 2px 8px rgba(99, 102, 241, 0.3); }
+  button.primary:disabled { background: var(--border); color: var(--muted); box-shadow: none; cursor: not-allowed; opacity: 0.7; }
+  button.ghost {
+    background: var(--ghost-btn-bg);
+    color: var(--text);
+    border: 1px solid var(--border);
+  }
+  button.ghost:hover { background: var(--ghost-btn-hover); border-color: var(--ghost-btn-border); }
+  button.ghost:active { transform: translateY(1px); }
+
+  /* ---------- Result blocks ---------- */
+  .answer-card {
+    margin-top: 1.25rem;
+    padding: 1.5rem;
+    background: var(--answer-bg);
+    border-radius: var(--radius-sm);
+    border-left: 4px solid var(--accent);
+    display: none;
+    animation: fadeIn 0.4s ease-out;
+  }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+  .answer-card.visible { display: block; }
+  .answer-text { white-space: pre-wrap; font-size: 1rem; color: var(--text); line-height: 1.7; }
+  
+  .citations { margin-top: 1.25rem; }
+  .citation {
+    background: var(--citation-bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 1rem;
+    margin-top: 0.75rem;
+    font-size: 0.9rem;
+    transition: border-color 0.2s ease;
+  }
+  .citation:hover { border-color: var(--ghost-btn-border); }
+  .citation .head {
+    display: flex; justify-content: space-between; align-items: center;
+    margin-bottom: 0.5rem;
+    color: var(--muted); font-family: ui-monospace, Menlo, monospace; font-size: 0.8rem;
+  }
+  .citation .score {
+    background: var(--accent-light); color: var(--accent-dark);
+    padding: 0.2rem 0.6rem; border-radius: 100px; font-weight: 500;
+  }
+  [data-theme="dark"] .citation .score { color: #a5b4fc; }
+  .citation .body { color: var(--text); line-height: 1.6; opacity: 0.9; }
+
+  /* ---------- Doc list ---------- */
+  .doc-list { display: grid; gap: 0.75rem; }
+  .doc-item {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 1rem 1.25rem;
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    background: var(--doc-bg);
+    font-size: 0.95rem;
+    transition: all 0.2s ease;
+  }
+  .doc-item:hover { 
+    border-color: var(--accent); 
+    background: var(--accent-light); 
+    transform: translateX(4px);
+  }
+  .doc-item .name { font-weight: 500; display: flex; align-items: center; gap: 0.5rem; color: var(--text); }
+  .doc-item .name::before { content: '📄'; font-size: 1.1rem; }
+  .doc-item .meta { color: var(--muted); font-size: 0.8rem; font-family: ui-monospace, Menlo, monospace; margin-top: 0.2rem; }
+  
+  .doc-item-right { text-align: right; }
+
+  /* ---------- Spinner ---------- */
+  .spinner {
+    display: inline-block;
+    width: 16px; height: 16px;
+    border: 2px solid var(--spinner-bg);
+    border-top-color: currentColor;
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+    vertical-align: middle;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* ---------- Toast ---------- */
+  .toasts {
+    position: fixed;
+    top: 1.5rem; right: 1.5rem;
+    z-index: 1000;
+    display: grid; gap: 0.75rem;
+  }
+  .toast {
+    background: var(--toast-bg);
+    backdrop-filter: blur(8px);
+    border: 1px solid var(--border);
+    border-left: 4px solid var(--accent);
+    border-radius: var(--radius-sm);
+    padding: 1rem 1.25rem;
+    box-shadow: var(--shadow-lg);
+    min-width: 250px; max-width: 380px;
+    font-size: 0.95rem;
+    color: var(--text);
+    animation: slidein 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+  .toast.success { border-left-color: var(--success); }
+  .toast.error { border-left-color: var(--error); }
+  .toast.warn { border-left-color: var(--warn); }
+  @keyframes slidein { from { transform: translateX(120%); opacity: 0; } to { transform: translateX(0); opacity: 1; } }
+
+  /* ---------- Misc ---------- */
+  .muted { color: var(--muted); }
+  .empty {
+    text-align: center;
+    color: var(--muted);
+    padding: 2.5rem 1rem;
+    font-size: 0.95rem;
+    background: var(--empty-bg);
+    border-radius: var(--radius-sm);
+    border: 1px dashed var(--border);
+  }
+  details { font-size: 0.9rem; margin-top: 1rem; }
+  details > summary { cursor: pointer; color: var(--muted); padding: 0.5rem 0; user-select: none; transition: color 0.2s; }
+  details > summary:hover { color: var(--text); }
+  details pre {
+    background: var(--pre-bg); 
+    color: var(--pre-text);
+    padding: 1rem; border-radius: var(--radius-sm);
+    font-size: 0.8rem; overflow: auto; max-height: 300px;
+    font-family: ui-monospace, Menlo, monospace;
+    border: 1px solid var(--border);
+  }
+  @media (max-width: 640px) {
+    .topbar { padding: 1rem; flex-direction: column; align-items: flex-start; gap: 1rem; }
+    .container { padding: 1.5rem 1rem; }
+    .input-row { flex-direction: column; }
+    button { width: 100%; }
+    .card { padding: 1.25rem; }
+  }
+</style>
+<script>
+  // Script needs to be high up to prevent flash of wrong theme
+  const savedTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
+  document.documentElement.setAttribute('data-theme', savedTheme);
+</script>
+</head>
+<body>
+
+<header class="topbar">
+  <div class="brand">
+    <div class="logo">
+      <svg width="26" height="26" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 19.5v-15A2.5 2.5 0 0 1 6.5 2H20v20H6.5a2.5 2.5 0 0 1 0-5H20"></path>
+        <path d="M12 6.5l1.5 3 3 1.5-3 1.5-1.5 3-1.5-3-3-1.5 3-1.5z"></path>
+      </svg>
+    </div>
+    <div>
+      <h1>StudyBot</h1>
+      <p>AI Study Buddy — upload notes, ask questions, get cited answers</p>
+    </div>
+  </div>
+  <div class="top-actions">
+    <div class="status-pills" id="status-pills">
+      <span class="pill"><span class="spinner"></span> loading…</span>
+    </div>
+    <button id="theme-toggle" class="ghost theme-toggle-btn" aria-label="Toggle Theme" onclick="toggleTheme()">
+      <svg id="moon-icon" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"></path>
+      </svg>
+      <svg id="sun-icon" style="display:none" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="12" cy="12" r="5"></circle>
+        <line x1="12" y1="1" x2="12" y2="3"></line>
+        <line x1="12" y1="21" x2="12" y2="23"></line>
+        <line x1="4.22" y1="4.22" x2="5.64" y2="5.64"></line>
+        <line x1="18.36" y1="18.36" x2="19.78" y2="19.78"></line>
+        <line x1="1" y1="12" x2="3" y2="12"></line>
+        <line x1="21" y1="12" x2="23" y2="12"></line>
+        <line x1="4.22" y1="19.78" x2="5.64" y2="18.36"></line>
+        <line x1="18.36" y1="5.64" x2="19.78" y2="4.22"></line>
+      </svg>
+    </button>
+  </div>
+</header>
+
+<main class="container">
+
+  <section class="card">
+    <div class="card-header">
+      <h2><span class="step">1</span>Upload a lecture</h2>
+      <span class="meta">PDF, TXT, or Markdown</span>
+    </div>
+    <label class="drop" id="drop">
+      <svg fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="1.5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M12 16.5V9.75m0 0l3 3m-3-3l-3 3M6.75 19.5a4.5 4.5 0 01-1.41-8.775 5.25 5.25 0 0110.233-2.33 3 3 0 013.758 3.848A3.752 3.752 0 0118 19.5H6.75z" />
+      </svg>
+      <p><strong>Drag a file here</strong> or <span class="browse">click to browse</span></p>
+      <p style="font-size:0.85rem; margin-top:0.5rem; opacity:0.7;">Max ~10MB. Try a Wikipedia article from <code>sample_data/</code>.</p>
+      <input type="file" id="file" accept=".pdf,.txt,.md">
+    </label>
+    <div id="upload-result"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-header">
+      <h2><span class="step">2</span>Ask a question</h2>
+      <span class="meta">Grounded in your uploaded notes</span>
+    </div>
+    <div class="input-row">
+      <input type="text" id="question" placeholder="e.g. What is photosynthesis?" autocomplete="off">
+      <button class="primary" id="ask-btn" onclick="ask()">
+        <svg style="width:18px;height:18px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M21 21l-5.197-5.197m0 0A7.5 7.5 0 105.196 5.196a7.5 7.5 0 0010.607 10.607z" /></svg>
+        Ask
+      </button>
+    </div>
+    <div class="answer-card" id="answer-card">
+      <div class="answer-text" id="answer-text"></div>
+      <div class="citations" id="citations"></div>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-header">
+      <h2><span class="step">3</span>Your documents</h2>
+      <button class="ghost" onclick="refresh()">
+        <svg style="width:16px;height:16px" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2"><path stroke-linecap="round" stroke-linejoin="round" d="M16.023 9.348h4.992v-.001M2.985 19.644v-4.992m0 0h4.992m-4.993 0l3.181 3.183a8.25 8.25 0 0013.803-3.7M4.031 9.865a8.25 8.25 0 0113.803-3.7l3.181 3.182m0-4.991v4.99" /></svg>
+        Refresh
+      </button>
+    </div>
+    <div class="doc-list" id="docs"><div class="empty">No documents yet — upload one above.</div></div>
+  </section>
+
+  <details>
+    <summary>Raw API responses (debug)</summary>
+    <pre id="debug-log">No requests yet.</pre>
+  </details>
+
+</main>
+
+<div class="toasts" id="toasts"></div>
+
+<script>
+// ============================================================================
+// Theme Toggle
+// ============================================================================
+function updateThemeIcon() {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  $('moon-icon').style.display = isLight ? 'block' : 'none';
+  $('sun-icon').style.display = isLight ? 'none' : 'block';
+}
+
+function toggleTheme() {
+  const current = document.documentElement.getAttribute('data-theme');
+  const nextTheme = current === 'light' ? 'dark' : 'light';
+  document.documentElement.setAttribute('data-theme', nextTheme);
+  localStorage.setItem('theme', nextTheme);
+  updateThemeIcon();
+}
+
+document.addEventListener('DOMContentLoaded', updateThemeIcon);
+
+// ============================================================================
+// Config
+// ============================================================================
+const API_BASE = (window.API_BASE
+  || new URLSearchParams(location.search).get('api')
+  || '').replace(/\/$/, '');
+
+const USER_ID = (new URLSearchParams(location.search).get('user') || 'test-user-001');
+
+// ============================================================================
+// Helpers
+// ============================================================================
+function $(id) { return document.getElementById(id); }
+
+function toast(msg, type = '') {
+  const el = document.createElement('div');
+  el.className = 'toast ' + type;
+  
+  let icon = '';
+  if (type === 'success') icon = '✅';
+  else if (type === 'error') icon = '❌';
+  else if (type === 'warn') icon = '⚠️';
+  else icon = 'ℹ️';
+
+  el.innerHTML = `<span>${icon}</span> <div>${msg}</div>`;
+  $('toasts').appendChild(el);
+  setTimeout(() => el.style.opacity = '0', 2500);
+  setTimeout(() => el.remove(), 2800);
+}
+
+function logDebug(label, data) {
+  const lines = $('debug-log').textContent === 'No requests yet.' ? [] : $('debug-log').textContent.split('\n');
+  lines.unshift(`── ${new Date().toLocaleTimeString()} — ${label} ──\n${JSON.stringify(data, null, 2)}\n`);
+  $('debug-log').textContent = lines.slice(0, 6).join('\n');
+}
+
+async function call(path, opts = {}) {
+  opts.headers = Object.assign({'X-User-Id': USER_ID}, opts.headers || {});
+  const r = await fetch(API_BASE + path, opts);
+  const text = await r.text();
+  let body;
+  try { body = JSON.parse(text); } catch { body = text; }
+  logDebug(`${opts.method || 'GET'} ${path}`, body);
+  return {ok: r.ok, status: r.status, body};
+}
+
+// ============================================================================
+// Backend status
+// ============================================================================
+async function loadStatus() {
+  const res = await call('/health');
+  if (!res.ok) {
+    $('status-pills').innerHTML = '<span class="pill error">backend offline</span>';
+    return;
+  }
+  $('status-pills').innerHTML = Object.entries(res.body.backends)
+    .map(([k, v]) => `<span class="pill ${v === 'local' ? 'local' : 'remote'}">${k}: ${v}</span>`)
+    .join('');
+}
+
+// ============================================================================
+// Upload
+// ============================================================================
+const drop = $('drop');
+const fileInput = $('file');
+
+drop.addEventListener('dragover', e => { e.preventDefault(); drop.classList.add('dragover'); });
+drop.addEventListener('dragleave', () => drop.classList.remove('dragover'));
+drop.addEventListener('drop', e => {
+  e.preventDefault();
+  drop.classList.remove('dragover');
+  if (e.dataTransfer.files[0]) doUpload(e.dataTransfer.files[0]);
+});
+fileInput.addEventListener('change', e => { if (e.target.files[0]) doUpload(e.target.files[0]); });
+
+async function doUpload(file) {
+  $('upload-result').innerHTML = `<p class="muted" style="margin:1rem 0 0; display:flex; align-items:center; gap:0.5rem;"><span class="spinner" style="border-color:rgba(255,255,255,0.2);border-top-color:var(--accent);"></span> Uploading ${file.name} (${(file.size/1024).toFixed(1)} KB)…</p>`;
+  const fd = new FormData();
+  fd.append('file', file);
+  const res = await call('/upload', {method: 'POST', body: fd});
+  if (!res.ok) {
+    toast(`Upload failed: ${res.body.detail || res.status}`, 'error');
+    $('upload-result').innerHTML = `<p style="color:var(--error); margin:1rem 0 0; display:flex; align-items:center; gap:0.5rem;">❌ ${res.body.detail || 'Upload failed'}</p>`;
+    return;
+  }
+  const b = res.body;
+  $('upload-result').innerHTML = `
+    <div style="margin-top:1.25rem; padding:1rem 1.25rem; background:rgba(16,185,129,0.1); border-radius:var(--radius-sm); border:1px solid rgba(16,185,129,0.3); font-size:0.95rem;">
+      <div style="display:flex; align-items:center; gap:0.5rem; color:#059669; font-weight:500; margin-bottom:0.25rem;">✓ Upload Successful</div>
+      <strong style="color:var(--text);">${b.filename}</strong> — ${b.chars_extracted.toLocaleString()} chars extracted &amp; indexed
+      <div style="font-family:ui-monospace,Menlo,monospace; color:var(--muted); font-size:0.8rem; margin-top:0.4rem;">doc_id: ${b.doc_id}</div>
+    </div>`;
+  toast(`Uploaded ${b.filename}`, 'success');
+  refresh();
+}
+
+// ============================================================================
+// Ask
+// ============================================================================
+async function ask() {
+  const q = $('question').value.trim();
+  if (!q) { toast('Type a question first', 'warn'); return; }
+  $('ask-btn').disabled = true;
+  $('answer-card').classList.add('visible');
+  $('answer-text').innerHTML = '<span class="spinner"></span> Thinking…';
+  $('citations').innerHTML = '';
+  const res = await call('/query', {
+    method: 'POST',
+    headers: {'Content-Type': 'application/json'},
+    body: JSON.stringify({question: q}),
+  });
+  $('ask-btn').disabled = false;
+  if (!res.ok) {
+    $('answer-text').innerHTML = `<span style="color:var(--error);">❌ ${res.body.detail || 'Error'}</span>`;
+    return;
+  }
+  
+  // Basic markdown bold formatting for answer
+  let formattedAnswer = res.body.answer.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>');
+  $('answer-text').innerHTML = formattedAnswer;
+  
+  const c = res.body.citations || [];
+  if (c.length) {
+    $('citations').innerHTML = '<div class="muted" style="font-size:0.85rem; margin-top:1rem; margin-bottom:0.5rem; display:flex; align-items:center; gap:0.4rem;">📎 Citations from your documents:</div>' +
+      c.map(x => `
+        <div class="citation">
+          <div class="head">
+            <span>chunk ${x.chunk}</span>
+            <span class="score">score ${(x.score || 0).toFixed(1)}</span>
+          </div>
+          <div class="body">${(x.text || '').replace(/</g, '&lt;')}</div>
+        </div>
+      `).join('');
+  } else {
+    $('citations').innerHTML = '<div class="muted" style="font-size:0.9rem; margin-top:1rem; padding:1rem; background:var(--empty-bg); border-radius:var(--radius-sm);">No citations matched. Try a question closer to your uploaded content.</div>';
+  }
+}
+
+$('question').addEventListener('keydown', e => { if (e.key === 'Enter') ask(); });
+
+// ============================================================================
+// Doc list
+// ============================================================================
+async function refresh() {
+  const res = await call('/docs/list');
+  if (!res.ok || !res.body.docs || !res.body.docs.length) {
+    $('docs').innerHTML = '<div class="empty">No documents yet — upload one above.</div>';
+    return;
+  }
+  $('docs').innerHTML = res.body.docs.map(d => `
+    <div class="doc-item">
+      <div>
+        <div class="name">${d.filename || d.doc_id}</div>
+        <div class="meta">${(d.chars || 0).toLocaleString()} chars · ${(d.size || 0).toLocaleString()} bytes</div>
+      </div>
+      <div class="doc-item-right meta">${(d.doc_id || '').slice(0, 8)}…</div>
+    </div>
+  `).join('');
+}
+
+// ============================================================================
+// Boot
+// ============================================================================
+loadStatus();
+refresh();
+</script>
+</body>
+</html>
