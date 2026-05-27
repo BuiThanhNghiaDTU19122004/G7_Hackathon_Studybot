@@ -47,6 +47,34 @@ USERSTORE_POSTGRES_URL=postgresql://USER:PASSWORD@PRIVATE_RDS_ENDPOINT:5432/stud
 lambda_entry.handler
 ```
 
+## Lambda Package
+
+Use the Lambda-only requirements file. Do not upload `.venv`.
+
+```powershell
+New-Item -ItemType Directory -Force build
+.\.venv\Scripts\python.exe -m pip install -r requirements-lambda.txt -t build
+Copy-Item lambda_entry.py build\
+Copy-Item src build\src -Recurse
+Compress-Archive -Path build\* -DestinationPath studybot-lambda.zip -Force
+```
+
+Upload:
+
+```text
+studybot-lambda.zip
+```
+
+Do not include:
+
+```text
+.venv/
+_data/
+tests/
+sample_data/
+frontend/   # frontend goes to S3 + CloudFront
+```
+
 ## Bedrock KB Upload Flow
 
 1. Browser calls `POST /upload`.

@@ -13,6 +13,14 @@ def _env(name: str, default: str = "") -> str:
     return os.getenv(name, default)
 
 
+def _is_lambda() -> bool:
+    return bool(os.getenv("AWS_LAMBDA_FUNCTION_NAME"))
+
+
+def _lambda_default(local_path: str, lambda_path: str) -> str:
+    return lambda_path if _is_lambda() else local_path
+
+
 @dataclass(frozen=True)
 class Config:
     # AI
@@ -23,13 +31,13 @@ class Config:
     # Storage
     storage_backend: str = _env("STORAGE_BACKEND", "local")
     storage_bucket: str = _env("STORAGE_BUCKET", "")
-    storage_local_dir: str = _env("STORAGE_LOCAL_DIR", "./_data/uploads")
+    storage_local_dir: str = _env("STORAGE_LOCAL_DIR", _lambda_default("./_data/uploads", "/tmp/studybot/uploads"))
 
     # UserStore
     userstore_backend: str = _env("USERSTORE_BACKEND", "sqlite")
     userstore_table: str = _env("USERSTORE_TABLE", "")
     userstore_postgres_url: str = _env("USERSTORE_POSTGRES_URL", "")
-    userstore_sqlite_path: str = _env("USERSTORE_SQLITE_PATH", "./_data/users.db")
+    userstore_sqlite_path: str = _env("USERSTORE_SQLITE_PATH", _lambda_default("./_data/users.db", "/tmp/studybot/users.db"))
 
     # Vector
     vector_backend: str = _env("VECTOR_BACKEND", "local")
