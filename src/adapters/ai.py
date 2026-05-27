@@ -71,3 +71,25 @@ class LocalAI:
             ),
             "citations": [],
         }
+
+
+class GeminiAI:
+    """Google Gemini client (Free Tier alternative to Bedrock). Uses google-genai."""
+
+    def __init__(self, api_key: str, model_id: str = "gemini-1.5-flash"):
+        from google import genai
+        if not api_key:
+            raise ValueError("GEMINI_API_KEY must be set for Gemini backend")
+        self.client = genai.Client(api_key=api_key)
+        self.model_id = model_id
+
+    def invoke(self, prompt: str, **kwargs: Any) -> str:
+        resp = self.client.models.generate_content(
+            model=self.model_id,
+            contents=prompt,
+            config={"temperature": kwargs.get("temperature", 0.2)}
+        )
+        return resp.text or ""
+
+    def retrieve_and_generate(self, query: str, kb_id: str = "") -> dict:
+        raise NotImplementedError("For Gemini, RAG is handled locally in handlers.py, not as a managed KB like Bedrock.")

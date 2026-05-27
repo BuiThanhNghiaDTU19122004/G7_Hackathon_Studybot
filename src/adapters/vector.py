@@ -61,12 +61,28 @@ class BedrockKBVector:
 class LocalVector:
     """Simple in-memory inverted index + TF scoring. NOT semantic — keyword only.
 
-    Good enough for verifying the API contract locally. Production needs real
-    embeddings + ANN — that's what Bedrock KB provides.
+    Hackathon Serverless Fix: Saves to /tmp/vector_db.json so it survives warm Lambda restarts.
     """
 
     def __init__(self):
+        import json
+        import os
+        self.db_path = "/tmp/vector_db.json"
         self.docs: list[tuple[str, str, dict]] = []   # (doc_id, text, metadata)
+        if os.path.exists(self.db_path):
+            try:
+                with open(self.db_path, "r", encoding="utf-8") as f:
+                    self.docs = json.load(f)
+            except Exception:
+                pass
+
+    def _save(self):
+        import json
+        try:
+            with open(self.db_path, "w", encoding="utf-8") as f:
+                json.dump(self.docs, f)
+        except Exception:
+            pass
 
     @staticmethod
     def _tokens(text: str) -> list:
@@ -92,6 +108,7 @@ class LocalVector:
         md = metadata or {}
         for i, chunk in enumerate(self._chunk(text)):
             self.docs.append((f"{doc_id}#{i}", chunk, {**md, "doc_id": doc_id, "chunk_idx": i}))
+        self._save()
 
     def search(self, query: str, top_k: int = 5, filter: Optional[dict] = None) -> list:
         q_tokens = set(self._tokens(query))

@@ -64,3 +64,11 @@ export const uploadFile = async (file) => {
 
   return response.json();
 };
+
+export const callDocumentAction = async (actionType, docId = null) => {
+  return callApi('/action', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ action_type: actionType, doc_id: docId })
+  });
+};

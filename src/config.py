@@ -19,6 +19,7 @@ class Config:
     ai_backend: str = _env("AI_BACKEND", "local")
     ai_model_id: str = _env("AI_MODEL_ID", "anthropic.claude-3-5-haiku-20241022-v1:0")
     aws_region: str = _env("AWS_REGION", "ap-southeast-1")
+    gemini_api_key: str = _env("GEMINI_API_KEY", "")
 
     # Storage
     storage_backend: str = _env("STORAGE_BACKEND", "local")
@@ -37,6 +38,8 @@ class Config:
 
     # Identity
     default_user_id: str = _env("DEFAULT_USER_ID", "test-user-001")
+    cognito_user_pool_id: str = _env("COGNITO_USER_POOL_ID", "")
+    cognito_client_id: str = _env("COGNITO_CLIENT_ID", "")
 
     # Logging
     log_level: str = _env("LOG_LEVEL", "INFO")

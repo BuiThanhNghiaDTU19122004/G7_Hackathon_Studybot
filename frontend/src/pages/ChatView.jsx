@@ -2,7 +2,7 @@ import React, { useState, useEffect, useRef } from 'react';
 import { Send, UploadCloud, BookOpen, AlertCircle, FileText, CheckCircle2 } from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { callApi, uploadFile } from '../api';
+import { callApi, uploadFile, callDocumentAction } from '../api';
 
 const ChatView = () => {
   const [messages, setMessages] = useState([]);
@@ -91,6 +91,28 @@ const ChatView = () => {
     }
   };
 
+  const handleSpecialAction = async (actionType) => {
+    setIsSending(true);
+    try {
+      const res = await callDocumentAction(actionType);
+      setMessages(prev => [...prev, { 
+        role: 'bot', 
+        content: res.answer, 
+        citations: res.citations || [] 
+      }]);
+      // Save query text to history manually
+      const history = JSON.parse(localStorage.getItem('studybot_history') || '[]');
+      history.unshift(res.question);
+      if (history.length > 20) history.pop();
+      localStorage.setItem('studybot_history', JSON.stringify(history));
+      window.dispatchEvent(new Event('history-updated'));
+    } catch (err) {
+      showToast(err.message || 'Lỗi thực hiện hành động', 'error');
+    } finally {
+      setIsSending(false);
+    }
+  };
+
   const handleFileUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -167,13 +189,13 @@ const ChatView = () => {
             <h2>Xin chào!</h2>
             <p>Hôm nay bạn muốn học gì? Mình có thể tóm tắt tài liệu, giải thích khái niệm, hoặc tạo bài tập trắc nghiệm giúp bạn.</p>
             <div className="suggestion-chips">
-              <div className="chip" onClick={() => setPresetInput('Tóm tắt ý chính của tài liệu')}>
+              <div className="chip" onClick={() => handleSpecialAction('summary')}>
                 <FileText size={16} /> Tóm tắt tài liệu
               </div>
               <div className="chip" onClick={() => setPresetInput('Giải thích khái niệm quan trọng nhất')}>
                 <BookOpen size={16} /> Giải thích khái niệm
               </div>
-              <div className="chip" onClick={() => setPresetInput('Tạo 5 câu trắc nghiệm để ôn tập')}>
+              <div className="chip" onClick={() => handleSpecialAction('quiz')}>
                 <AlertCircle size={16} /> Tạo trắc nghiệm
               </div>
             </div>

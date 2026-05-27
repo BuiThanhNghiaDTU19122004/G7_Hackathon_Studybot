@@ -41,19 +41,47 @@ userstore = factory.make_userstore()
 vector_store = factory.make_vector()
 
 
-def _resolve_user_id(x_user_id: str | None) -> str:
-    """Auth abstraction: extract user_id from header, fall back to default for local dev.
+_jwks = None
 
-    In production you populate X-User-Id from:
-      - Cognito JWT (decoded by API Gateway authorizer)
-      - Signed URL claim
-      - Custom auth Lambda
-    """
+def _resolve_user_id(
+    authorization: str | None = Header(default=None),
+    x_user_id: str | None = Header(default=None)
+) -> str:
+    """Extract user_id from Cognito JWT, fall back to default for local dev."""
+    if config.cognito_user_pool_id and authorization and authorization.startswith("Bearer "):
+        token = authorization.split(" ")[1]
+        try:
+            from jose import jwt
+            import urllib.request
+            import json
+            global _jwks
+            if not _jwks:
+                url = f"https://cognito-idp.{config.aws_region}.amazonaws.com/{config.cognito_user_pool_id}/.well-known/jwks.json"
+                req = urllib.request.Request(url)
+                with urllib.request.urlopen(req) as response:
+                    _jwks = json.loads(response.read().decode("utf-8"))
+            
+            claims = jwt.decode(
+                token,
+                _jwks,
+                algorithms=["RS256"],
+                audience=config.cognito_client_id,
+                issuer=f"https://cognito-idp.{config.aws_region}.amazonaws.com/{config.cognito_user_pool_id}"
+            )
+            # Use 'sub' (subject) or 'username' claim from Cognito
+            return claims.get("username") or claims.get("sub") or config.default_user_id
+        except Exception as e:
+            raise HTTPException(status_code=401, detail=f"Invalid token: {e}")
     return x_user_id or config.default_user_id
 
 
 class QueryRequest(BaseModel):
     question: str
+
+
+class ActionRequest(BaseModel):
+    action_type: str
+    doc_id: str | None = None
 
 
 @app.get("/health")
@@ -73,8 +101,9 @@ def health() -> dict:
 async def upload(
     file: UploadFile = File(...),
     x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
 ) -> dict:
-    user_id = _resolve_user_id(x_user_id)
+    user_id = _resolve_user_id(authorization, x_user_id)
     data = await file.read()
     if not data:
         raise HTTPException(status_code=400, detail="Empty file")
@@ -89,8 +118,12 @@ async def upload(
 
 
 @app.post("/query")
-def query(req: QueryRequest, x_user_id: str | None = Header(default=None)) -> dict:
-    user_id = _resolve_user_id(x_user_id)
+def query(
+    req: QueryRequest, 
+    x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user_id = _resolve_user_id(authorization, x_user_id)
     if not req.question.strip():
         raise HTTPException(status_code=400, detail="Empty question")
     return handlers.handle_query(
@@ -104,14 +137,41 @@ def query(req: QueryRequest, x_user_id: str | None = Header(default=None)) -> di
     )
 
 
+@app.post("/action")
+def document_action(
+    req: ActionRequest,
+    x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user_id = _resolve_user_id(authorization, x_user_id)
+    result = handlers.handle_document_action(
+        user_id=user_id,
+        action_type=req.action_type,
+        doc_id=req.doc_id,
+        ai_client=ai_client,
+        storage=storage,
+        userstore=userstore,
+    )
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    return result
+
+
 @app.get("/docs/list")
-def list_docs(x_user_id: str | None = Header(default=None)) -> dict:
-    return handlers.handle_list_docs(_resolve_user_id(x_user_id), userstore)
+def list_docs(
+    x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    return handlers.handle_list_docs(_resolve_user_id(authorization, x_user_id), userstore)
 
 
 @app.get("/queries/recent")
-def recent(x_user_id: str | None = Header(default=None), limit: int = 10) -> dict:
-    return handlers.handle_recent_queries(_resolve_user_id(x_user_id), userstore, limit=limit)
+def recent(
+    x_user_id: str | None = Header(default=None), 
+    authorization: str | None = Header(default=None),
+    limit: int = 10
+) -> dict:
+    return handlers.handle_recent_queries(_resolve_user_id(authorization, x_user_id), userstore, limit=limit)
 
 
 # ---- Static frontend ----
