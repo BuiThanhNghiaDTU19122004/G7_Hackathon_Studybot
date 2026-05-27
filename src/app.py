@@ -115,12 +115,25 @@ def recent(x_user_id: str | None = Header(default=None), limit: int = 10) -> dic
 
 
 # ---- Static frontend ----
-FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend"
-
+FRONTEND_DIR = Path(__file__).resolve().parent.parent / "frontend" / "dist"
+ASSETS_DIR = FRONTEND_DIR / "assets"
 
 if config.serve_frontend:
+    from fastapi.staticfiles import StaticFiles
+    import os
+
+    # Ensure dist and assets directories exist to prevent FastAPI startup errors
+    if not FRONTEND_DIR.exists():
+        os.makedirs(FRONTEND_DIR, exist_ok=True)
+    if not ASSETS_DIR.exists():
+        os.makedirs(ASSETS_DIR, exist_ok=True)
+
+    # Mount static assets
+    app.mount("/assets", StaticFiles(directory=ASSETS_DIR), name="assets")
+
     @app.get("/")
     def index() -> FileResponse:
-        """Convenience: serves frontend/index.html at /. Set SERVE_FRONTEND=false
+        """Convenience: serves frontend/dist/index.html at /. Set SERVE_FRONTEND=false
         if you deploy the frontend separately (CloudFront+S3, Amplify, ALB)."""
+        # Note: Since we use HashRouter, all routes like /#/login load this index.html
         return FileResponse(FRONTEND_DIR / "index.html")
