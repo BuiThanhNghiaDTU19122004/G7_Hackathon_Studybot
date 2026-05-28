@@ -1,0 +1,18 @@
+{
+  "Comment": "DNS validation for ACM certificate",
+  "Changes": [
+    {
+      "Action": "UPSERT",
+      "ResourceRecordSet": {
+        "Name": "_486e310c1af61ede67a56d311ed75100.tranminhquang.me.",
+        "Type": "CNAME",
+        "TTL": 300,
+        "ResourceRecords": [
+          {
+            "Value": "_14072275b66ce18aef5bea02dfc829f9.jkddzztszm.acm-validations.aws."
+          }
+        ]
+      }
+    }
+  ]
+}
