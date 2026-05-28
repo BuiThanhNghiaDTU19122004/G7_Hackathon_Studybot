@@ -123,13 +123,38 @@ def _extract_json_object(text: str) -> dict | None:
 
 def _normalize_flashcard_payload(text: str, count: int) -> dict:
     parsed = _extract_json_object(text)
-    if parsed and isinstance(parsed.get("cards"), list):
+    if parsed:
+        raw_cards = (
+            parsed.get("cards")
+            or parsed.get("flashcards")
+            or parsed.get("items")
+            or parsed.get("data")
+            or []
+        )
+    else:
+        raw_cards = []
+
+    if isinstance(raw_cards, list):
         cards = []
-        for card in parsed["cards"]:
+        for card in raw_cards:
             if not isinstance(card, dict):
                 continue
-            front = str(card.get("front") or card.get("term") or "").strip()
-            back = str(card.get("back") or card.get("definition") or "").strip()
+            front = str(
+                card.get("front")
+                or card.get("term")
+                or card.get("question")
+                or card.get("prompt")
+                or card.get("title")
+                or ""
+            ).strip()
+            back = str(
+                card.get("back")
+                or card.get("definition")
+                or card.get("answer")
+                or card.get("explanation")
+                or card.get("content")
+                or ""
+            ).strip()
             if front and back:
                 cards.append({"front": front, "back": back})
         return {"cards": cards[:count]}
@@ -143,9 +168,21 @@ def _normalize_flashcard_payload(text: str, count: int) -> dict:
 
 def _normalize_quiz_payload(text: str, count: int) -> dict:
     parsed = _extract_json_object(text)
-    if parsed and isinstance(parsed.get("questions"), list):
+    if parsed:
+        raw_questions = (
+            parsed.get("questions")
+            or parsed.get("quiz")
+            or parsed.get("quizzes")
+            or parsed.get("items")
+            or parsed.get("data")
+            or []
+        )
+    else:
+        raw_questions = []
+
+    if isinstance(raw_questions, list):
         questions = []
-        for item in parsed["questions"]:
+        for item in raw_questions:
             if not isinstance(item, dict):
                 continue
             raw_options = item.get("options") or []
@@ -154,14 +191,43 @@ def _normalize_quiz_payload(text: str, count: int) -> dict:
             options = []
             for idx, option in enumerate(raw_options):
                 if isinstance(option, dict):
-                    text = str(option.get("text") or option.get("label") or "").strip()
-                    if text:
+                    option_text = str(
+                        option.get("text")
+                        or option.get("label")
+                        or option.get("value")
+                        or option.get("answer")
+                        or ""
+                    ).strip()
+                    if option_text:
                         options.append({
                             "id": str(option.get("id") or option.get("letter") or chr(65 + idx)).upper(),
-                            "text": text,
+                            "text": option_text,
                         })
-            answer = str(item.get("answer") or item.get("correctAnswer") or "").upper().strip()
-            question = str(item.get("question") or item.get("questionText") or "").strip()
+                elif isinstance(option, str):
+                    option_text = option.strip()
+                    if option_text:
+                        options.append({"id": chr(65 + idx), "text": option_text})
+            answer = str(
+                item.get("answer")
+                or item.get("correctAnswer")
+                or item.get("correct_answer")
+                or item.get("correctOption")
+                or item.get("correct_option")
+                or item.get("correct")
+                or ""
+            ).upper().strip()
+            if len(answer) > 1:
+                for option in options:
+                    if answer == option["text"].upper():
+                        answer = option["id"]
+                        break
+            question = str(
+                item.get("question")
+                or item.get("questionText")
+                or item.get("prompt")
+                or item.get("text")
+                or ""
+            ).strip()
             if question and len(options) >= 2 and answer:
                 questions.append({
                     "question": question,

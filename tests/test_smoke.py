@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 from src.app import app
+from src.handlers import _normalize_flashcard_payload, _normalize_quiz_payload
 
 
 client = TestClient(app)
@@ -96,3 +97,44 @@ def test_list_docs_per_user_isolation():
     assert any(d["filename"] == "a.txt" for d in a_docs)
     assert all(d["filename"] != "b.txt" for d in a_docs)
     assert any(d["filename"] == "b.txt" for d in b_docs)
+
+
+def test_normalize_flashcards_accepts_common_llm_variants():
+    raw = """
+    {
+      "flashcards": [
+        {"question": "CI/CD là gì?", "answer": "Một quy trình tự động hóa build, test và deploy."},
+        {"term": "Pipeline", "definition": "Chuỗi bước xử lý phần mềm."}
+      ]
+    }
+    """
+    payload = _normalize_flashcard_payload(raw, count=5)
+    assert payload == {
+        "cards": [
+            {"front": "CI/CD là gì?", "back": "Một quy trình tự động hóa build, test và deploy."},
+            {"front": "Pipeline", "back": "Chuỗi bước xử lý phần mềm."},
+        ]
+    }
+
+
+def test_normalize_quiz_accepts_string_options_and_answer_text():
+    raw = """
+    {
+      "quiz": [
+        {
+          "prompt": "CI/CD giúp ích gì?",
+          "options": ["Tự động hóa kiểm thử và triển khai", "Xóa toàn bộ logs", "Tắt kiểm thử"],
+          "correct_answer": "Tự động hóa kiểm thử và triển khai",
+          "explanation": "CI/CD giảm thao tác thủ công trong vòng đời phát hành."
+        }
+      ]
+    }
+    """
+    payload = _normalize_quiz_payload(raw, count=3)
+    assert payload["questions"][0]["question"] == "CI/CD giúp ích gì?"
+    assert payload["questions"][0]["answer"] == "A"
+    assert payload["questions"][0]["options"] == [
+        {"id": "A", "text": "Tự động hóa kiểm thử và triển khai"},
+        {"id": "B", "text": "Xóa toàn bộ logs"},
+        {"id": "C", "text": "Tắt kiểm thử"},
+    ]
