@@ -1,103 +1,205 @@
-import React, { useState, useEffect, useRef } from 'react';
-import { useLocation, useNavigate } from 'react-router-dom';
-import { Send, UploadCloud, BookOpen, AlertCircle, FileText, CheckCircle2, Sparkles } from 'lucide-react';
+import React, { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  AlertCircle,
+  BookOpen,
+  CheckCircle2,
+  FileQuestion,
+  FileText,
+  GraduationCap,
+  Lightbulb,
+  MessageSquareText,
+  Play,
+  Send,
+  Sparkles,
+  UploadCloud,
+} from 'lucide-react';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
-import { callApi, uploadFile, callDocumentAction } from '../api';
+import { callApi, callDocumentAction, uploadFile } from '../api';
 import FlashcardViewer from '../components/FlashcardViewer';
 import QuizViewer from '../components/QuizViewer';
 
-const parseFlashcards = (text) => {
-  const blocks = text.split(/\*\*Thẻ\s*\d+\*\*/i);
-  if (blocks.length < 2) return null;
-  
+const MODES = {
+  chat: {
+    label: 'Hỏi đáp',
+    title: 'Trò chuyện với tài liệu',
+    description: 'Đặt câu hỏi tự do và nhận câu trả lời có nguồn tham khảo.',
+    icon: MessageSquareText,
+  },
+  summary: {
+    label: 'Tóm tắt',
+    title: 'Bản tóm tắt học nhanh',
+    description: 'Rút ra ý chính, thuật ngữ cần nhớ và điểm dễ ra kiểm tra.',
+    icon: FileText,
+  },
+  flashcard: {
+    label: 'Flashcard',
+    title: 'Bộ thẻ ghi nhớ',
+    description: 'Tạo bộ thẻ lật để ôn khái niệm và định nghĩa.',
+    icon: BookOpen,
+  },
+  quiz: {
+    label: 'Trắc nghiệm',
+    title: 'Bài luyện tập',
+    description: 'Làm bài trắc nghiệm, chọn đáp án và chấm điểm ngay.',
+    icon: FileQuestion,
+  },
+};
+
+const actionCopy = {
+  summary: {
+    loading: 'Đang tạo bản tóm tắt...',
+    empty: 'Chưa có bản tóm tắt. Chọn tài liệu rồi nhấn tạo.',
+    cta: 'Tạo bản tóm tắt',
+  },
+  flashcard: {
+    loading: 'Đang tạo bộ flashcard...',
+    empty: 'Chưa có flashcard. Chọn tài liệu rồi tạo bộ thẻ đầu tiên.',
+    cta: 'Tạo flashcard',
+  },
+  quiz: {
+    loading: 'Đang tạo bài trắc nghiệm...',
+    empty: 'Chưa có bài trắc nghiệm. Chọn tài liệu rồi tạo bài luyện tập.',
+    cta: 'Tạo trắc nghiệm',
+  },
+};
+
+const stripMarkdown = (text = '') => text.replace(/\*\*/g, '').replace(/\r/g, '');
+
+const parseFlashcards = (text = '') => {
+  const normalized = stripMarkdown(text);
   const cards = [];
-  for (let i = 1; i < blocks.length; i++) {
-    const block = blocks[i];
-    const lines = block.split('\n').filter(l => l.trim().startsWith('-'));
-    if (lines.length >= 2) {
-      let term = lines[0].replace(/-\s*(?:\*\*)?(?:Khái niệm)?(?:\*\*)?:?\s*/i, '').trim();
-      let def = lines[1].replace(/-\s*(?:\*\*)?(?:Định nghĩa)?(?:\*\*)?:?\s*/i, '').trim();
-      // Clean up any remaining asterisks
-      term = term.replace(/\*\*/g, '').trim();
-      def = def.replace(/\*\*/g, '').trim();
-      cards.push({ term, definition: def });
-    }
+  const pairRegex = /(?:Front|Mặt trước|Câu hỏi|Thuật ngữ|Khái niệm)\s*:\s*([\s\S]*?)(?:\n|$)(?:Back|Mặt sau|Trả lời|Đáp án|Định nghĩa)\s*:\s*([\s\S]*?)(?=\n\s*(?:\d+[\).]|[-*])?\s*(?:Front|Mặt trước|Câu hỏi|Thuật ngữ|Khái niệm)\s*:|$)/gi;
+
+  for (const match of normalized.matchAll(pairRegex)) {
+    const term = match[1].replace(/^[-*\d.)\s]+/, '').trim();
+    const definition = match[2].replace(/^[-*\d.)\s]+/, '').trim();
+    if (term && definition) cards.push({ term, definition });
   }
-  return cards.length > 0 ? cards : null;
+
+  if (cards.length) return cards;
+
+  const blocks = normalized.split(/\n\s*(?=\d+[\).]\s|\-\s)/).filter(Boolean);
+  for (const block of blocks) {
+    const lines = block.split('\n').map((line) => line.replace(/^[-*\d.)\s]+/, '').trim()).filter(Boolean);
+    if (lines.length >= 2) cards.push({ term: lines[0], definition: lines.slice(1).join(' ') });
+  }
+
+  return cards.length ? cards : null;
 };
 
-const parseQuiz = (text) => {
-  const blocks = text.split(/\*\*Câu\s*\d+:\*\*/i);
-  if (blocks.length < 2) return null;
-  
+const parseQuiz = (text = '') => {
+  const normalized = stripMarkdown(text);
+  const blocks = normalized.split(/\n\s*(?=(?:Câu|Question)\s*\d+|\d+[\).]\s)/i).filter(Boolean);
   const questions = [];
-  for (let i = 1; i < blocks.length; i++) {
-    const block = blocks[i].trim();
-    const lines = block.split('\n').map(l => l.trim()).filter(l => l);
-    
-    if (lines.length > 0) {
-      const questionText = lines[0];
-      const options = [];
-      let correctAnswer = null;
 
-      for (let j = 1; j < lines.length; j++) {
-        const line = lines[j];
-        const optMatch = line.match(/^-\s*([A-D])\)\s*(.+)/i);
-        if (optMatch) {
-          options.push({ letter: optMatch[1].toUpperCase(), text: optMatch[2] });
-        }
-        
-        const ansMatch = line.match(/\*\(Đáp án đúng:\s*([A-D])\)\*/i) || line.match(/Đáp án đúng:\s*([A-D])/i);
-        if (ansMatch) {
-          correctAnswer = ansMatch[1].toUpperCase();
-        }
+  for (const block of blocks) {
+    const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
+    if (!lines.length) continue;
+
+    const questionText = lines[0].replace(/^(?:Câu|Question)?\s*\d+[\).:]?\s*/i, '').trim();
+    const options = [];
+    let correctAnswer = null;
+    let explanation = '';
+
+    for (const line of lines.slice(1)) {
+      const option = line.match(/^[-*]?\s*([A-D])[\).]\s*(.+)/i);
+      if (option) {
+        options.push({ letter: option[1].toUpperCase(), text: option[2].trim() });
+        continue;
       }
-      
-      if (options.length > 0 && correctAnswer) {
-        questions.push({ questionText, options, correctAnswer });
-      }
+
+      const answer = line.match(/(?:correct answer|đáp án đúng|dap an dung|answer)\s*:?\s*([A-D])/i);
+      if (answer) correctAnswer = answer[1].toUpperCase();
+
+      const explain = line.match(/(?:giải thích|giai thich|explanation)\s*:?\s*(.+)/i);
+      if (explain) explanation = explain[1].trim();
+    }
+
+    if (questionText && options.length >= 2 && correctAnswer) {
+      questions.push({ questionText, options, correctAnswer, explanation });
     }
   }
-  return questions.length > 0 ? questions : null;
+
+  return questions.length ? questions : null;
 };
 
-const ChatView = () => {
+const citationTitle = (citation) => {
+  if (citation.filename) return citation.filename;
+  if (citation.doc_id) return citation.doc_id;
+  const s3 = citation.source?.s3Location?.uri || citation.source?.uri || '';
+  return s3.split('/').pop() || 'Tài liệu';
+};
+
+const citationText = (citation) => citation.text || citation.content || '';
+
+const MarkdownBlock = ({ text }) => (
+  <div
+    className="study-markdown"
+    dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(marked.parse(text || '')) }}
+  />
+);
+
+const Citations = ({ citations = [] }) => {
+  if (!citations.length) return null;
+  return (
+    <div className="citations-block">
+      <div className="source-title">Nguồn tham khảo</div>
+      {citations.map((citation, index) => (
+        <div key={`${citationTitle(citation)}-${index}`} className="citation">
+          <strong>{citationTitle(citation)}</strong>
+          <div>{citationText(citation)}</div>
+        </div>
+      ))}
+    </div>
+  );
+};
+
+const ChatView = ({ selectedDoc }) => {
+  const [mode, setMode] = useState('chat');
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [isSending, setIsSending] = useState(false);
+  const [workspace, setWorkspace] = useState({
+    summary: null,
+    flashcard: null,
+    quiz: null,
+  });
+  const [loadingMode, setLoadingMode] = useState('');
   const [uploadStatus, setUploadStatus] = useState('');
   const [toast, setToast] = useState(null);
   const chatEndRef = useRef(null);
   const fileInputRef = useRef(null);
-  const location = useLocation();
-  const navigate = useNavigate();
+
+  const selectedDocName = selectedDoc?.filename || selectedDoc?.doc_id || 'Chưa chọn tài liệu';
+  const isBusy = Boolean(loadingMode);
+
+  const activeMode = MODES[mode];
+  const ActiveIcon = activeMode.icon;
 
   const showToast = (msg, type = 'info') => {
     setToast({ msg, type });
-    setTimeout(() => setToast(null), 3000);
+    window.clearTimeout(showToast.timer);
+    showToast.timer = window.setTimeout(() => setToast(null), 3200);
   };
 
   useEffect(() => {
     chatEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-  }, [messages]);
+  }, [messages, isBusy]);
 
   useEffect(() => {
     const handleNewChat = () => {
+      setMode('chat');
       setMessages([]);
       setInput('');
       setUploadStatus('');
     };
-    
-    const handleLoadHistory = (e) => {
+
+    const handleLoadHistory = (event) => {
       const history = JSON.parse(localStorage.getItem('studybot_history') || '[]');
-      const index = e.detail;
-      if (history[index]) {
-        // Just start a new chat with that prompt for simplicity, 
-        // or actually in a real app, it would load the full conversation.
-        // For the starter app, it only saves the question.
-        setMessages([{ role: 'user', content: history[index] }]);
-        handleSend(history[index]);
+      const question = history[event.detail];
+      if (question) {
+        setMode('chat');
+        setInput(question);
       }
     };
 
@@ -109,318 +211,321 @@ const ChatView = () => {
     };
   }, []);
 
-  useEffect(() => {
-    if (location.state?.action) {
-      const actionToTrigger = location.state.action;
-      // Clear the state so it doesn't trigger again on reload
-      navigate(location.pathname, { replace: true, state: {} });
-      // Small timeout to allow component to render before triggering action
-      setTimeout(() => handleSpecialAction(actionToTrigger), 100);
-    }
-  }, [location.state, navigate, location.pathname]);
+  const saveHistory = (question) => {
+    const history = JSON.parse(localStorage.getItem('studybot_history') || '[]');
+    const next = [question, ...history.filter((item) => item !== question)].slice(0, 20);
+    localStorage.setItem('studybot_history', JSON.stringify(next));
+    window.dispatchEvent(new Event('history-updated'));
+  };
 
-  const handleSend = async (overrideInput = null) => {
-    const text = overrideInput || input;
-    if (!text.trim()) return;
+  const sendQuestion = async () => {
+    const question = input.trim();
+    if (!question || isBusy) return;
 
-    const userMsg = { role: 'user', content: text };
-    setMessages(prev => [...prev, userMsg]);
+    setMessages((prev) => [...prev, { role: 'user', content: question }]);
     setInput('');
-    setIsSending(true);
-
-    // Save to history
-    if (!overrideInput) {
-      const history = JSON.parse(localStorage.getItem('studybot_history') || '[]');
-      history.unshift(text);
-      if (history.length > 20) history.pop();
-      localStorage.setItem('studybot_history', JSON.stringify(history));
-      window.dispatchEvent(new Event('history-updated'));
-    }
+    setLoadingMode('chat');
+    saveHistory(question);
 
     try {
-      const res = await callApi('/query', {
+      const response = await callApi('/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question: text })
+        body: JSON.stringify({ question }),
       });
 
-      let finalAnswer = res.answer;
-      let finalCitations = res.citations || [];
-
-      if (finalAnswer.includes('No relevant content') || finalAnswer.includes('Upload some first') || finalAnswer.includes('[LOCAL_AI_STUB]')) {
-        showToast('Hiển thị dữ liệu mẫu do chưa có tài liệu hoặc Backend ở chế độ LOCAL_AI_STUB', 'info');
-        finalAnswer = `Dựa trên tài liệu mẫu, **${text}** được giải thích là công nghệ cốt lõi giúp máy tính có thể học hỏi và mô phỏng tư duy con người. Khái niệm này bao trùm nhiều lĩnh vực như Machine Learning và Deep Learning.`;
-        finalCitations = [
-          { doc_id: 'AI_Lecture_01.pdf', text: '...trí tuệ nhân tạo (AI) là ngành khoa học máy tính hướng tới việc tự động hóa các hành vi thông minh...' }
-        ];
-      }
-
-      setMessages(prev => [...prev, { 
-        role: 'bot', 
-        content: finalAnswer, 
-        citations: finalCitations 
-      }]);
+      setMessages((prev) => [
+        ...prev,
+        {
+          role: 'bot',
+          content: response.answer || 'Không có câu trả lời.',
+          citations: response.citations || [],
+        },
+      ]);
     } catch (err) {
-      // Fallback to mock data for Q&A on any error
-      showToast('Hiển thị dữ liệu mẫu do chưa kết nối Backend hoặc thiếu tài liệu', 'info');
-      setMessages(prev => [...prev, { 
-        role: 'bot', 
-        content: `Dựa trên tài liệu mẫu, **${text}** được giải thích là công nghệ cốt lõi giúp máy tính có thể học hỏi và mô phỏng tư duy con người. Khái niệm này bao trùm nhiều lĩnh vực như Machine Learning và Deep Learning.`, 
-        citations: [
-          { doc_id: 'AI_Lecture_01.pdf', text: '...trí tuệ nhân tạo (AI) là ngành khoa học máy tính hướng tới việc tự động hóa các hành vi thông minh...' }
-        ]
-      }]);
+      showToast('Không gọi được /query', 'error');
+      setMessages((prev) => [
+        ...prev,
+        { role: 'bot', error: true, content: err.message || 'Backend đang lỗi.' },
+      ]);
     } finally {
-      setIsSending(false);
+      setLoadingMode('');
     }
   };
 
-  const handleSpecialAction = async (actionType) => {
-    setIsSending(true);
-    let questionText = actionType === 'summary' ? 'Tóm tắt tài liệu' : actionType === 'flashcard' ? 'Tạo Flashcard' : 'Tạo trắc nghiệm';
-    
-    const getDemoDataForAction = (type) => {
-      if (type === 'summary') return `**Tóm tắt: Tổng quan về Trí tuệ nhân tạo (AI)**\n\n- **Định nghĩa:** AI là ngành khoa học máy tính nhằm tạo ra các hệ thống có khả năng mô phỏng trí tuệ con người, bao gồm khả năng học tập, lập luận và tự sửa lỗi.\n- **Các loại AI chính:**\n  - *Narrow AI (AI Hẹp):* Chuyên môn hóa cho một tác vụ (VD: Siri, Alexa).\n  - *General AI (AI Rộng):* Có khả năng nhận thức và suy nghĩ như con người (Đang nghiên cứu).\n- **Ứng dụng:**\n  - Y tế: Chuẩn đoán bệnh, phân tích hình ảnh y khoa.\n  - Giao thông: Xe tự lái, tối ưu hóa tuyến đường.\n  - Giáo dục: Hệ thống gia sư thông minh (như StudyBot).\n- **Thách thức:** Vấn đề đạo đức, bảo mật dữ liệu, và nguy cơ thay thế việc làm của con người.`;
-      if (type === 'flashcard') return `Dưới đây là bộ Flashcard để bạn ôn tập:\n\n**Thẻ 1**\n- **Khái niệm:** Trí tuệ nhân tạo (AI)\n- **Định nghĩa:** Hệ thống máy tính mô phỏng trí tuệ con người, có khả năng học và lập luận.\n\n**Thẻ 2**\n- **Khái niệm:** Narrow AI (AI Hẹp)\n- **Định nghĩa:** AI chỉ được lập trình để thực hiện một tác vụ cụ thể, không có nhận thức tổng quát.\n\n**Thẻ 3**\n- **Khái niệm:** General AI (AI Rộng)\n- **Định nghĩa:** AI có năng lực nhận thức và tư duy toàn diện, tương đương trí tuệ con người.\n\n*Bạn có thể lưu các flashcard này vào Dashboard cá nhân để ôn lại sau nhé!*`;
-      if (type === 'quiz') return `**Bài kiểm tra ngắn gọn:**\n\n**Câu 1:** Loại AI nào hiện nay phổ biến nhất và được dùng trong các trợ lý ảo như Siri?\n- A) General AI\n- B) Super AI\n- C) Narrow AI\n- D) Human AI\n*(Đáp án đúng: C)*\n\n**Câu 2:** Lĩnh vực nào sau đây KHÔNG phải là ứng dụng phổ biến của AI hiện tại?\n- A) Chẩn đoán y khoa\n- B) Cảm nhận cảm xúc con người một cách hoàn hảo\n- C) Xe tự lái\n- D) Hệ thống gợi ý mua sắm\n*(Đáp án đúng: B)*`;
-      return 'Dữ liệu mẫu...';
-    };
+  const generateTool = async (tool) => {
+    if (isBusy) return;
+    if (!selectedDoc?.doc_id) {
+      showToast('Chọn một tài liệu ở sidebar trước đã.', 'error');
+      return;
+    }
+
+    setMode(tool);
+    setLoadingMode(tool);
 
     try {
-      const res = await callDocumentAction(actionType);
-      
-      let finalAnswer = res.answer;
-      if (finalAnswer.includes('[LOCAL_AI_STUB]')) {
-        showToast('Hiển thị dữ liệu mẫu do Backend đang chạy ở chế độ LOCAL_AI_STUB', 'info');
-        finalAnswer = getDemoDataForAction(actionType);
-      }
-
-      setMessages(prev => [...prev, { 
-        role: 'bot', 
-        content: finalAnswer, 
-        citations: res.citations || [] 
-      }]);
-      const history = JSON.parse(localStorage.getItem('studybot_history') || '[]');
-      history.unshift(res.question);
-      if (history.length > 20) history.pop();
-      localStorage.setItem('studybot_history', JSON.stringify(history));
-      window.dispatchEvent(new Event('history-updated'));
+      const response = await callDocumentAction(tool, selectedDoc.doc_id);
+      setWorkspace((prev) => ({
+        ...prev,
+        [tool]: {
+          raw: response.answer || '',
+          citations: response.citations || [],
+          doc: selectedDoc,
+          generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+        },
+      }));
+      saveHistory(`${MODES[tool].label}: ${selectedDoc.filename || selectedDoc.doc_id}`);
     } catch (err) {
-      // Fallback to mock data on any API or Document error to ensure UI can be viewed
-      showToast('Hiển thị dữ liệu mẫu do chưa kết nối Backend hoặc thiếu tài liệu', 'info');
-      setMessages(prev => [...prev, 
-        { role: 'user', content: questionText },
-        { role: 'bot', content: getDemoDataForAction(actionType), citations: [] }
-      ]);
-      const history = JSON.parse(localStorage.getItem('studybot_history') || '[]');
-      history.unshift(questionText);
-      if (history.length > 20) history.pop();
-      localStorage.setItem('studybot_history', JSON.stringify(history));
-      window.dispatchEvent(new Event('history-updated'));
+      showToast(`Không tạo được ${MODES[tool].label.toLowerCase()}`, 'error');
+      setWorkspace((prev) => ({
+        ...prev,
+        [tool]: { error: err.message || 'Backend đang lỗi.', raw: '', citations: [], doc: selectedDoc },
+      }));
     } finally {
-      setIsSending(false);
+      setLoadingMode('');
     }
   };
 
-  const handleFileUpload = async (e) => {
-    const file = e.target.files?.[0];
+  const handleUpload = async (event) => {
+    const file = event.target.files?.[0];
     if (!file) return;
 
-    setUploadStatus('Đang tải lên...');
-    
+    setUploadStatus(`Đang upload ${file.name}...`);
     try {
-      await uploadFile(file);
-      setUploadStatus('Tải lên thành công!');
-      showToast('Tải tài liệu thành công', 'success');
+      const result = await uploadFile(file);
+      setUploadStatus(`Đã upload ${result.filename || file.name}`);
+      showToast('Upload thành công. Knowledge Base đang sync.', 'success');
       window.dispatchEvent(new Event('docs-updated'));
-      setTimeout(() => setUploadStatus(''), 3000);
+      window.setTimeout(() => setUploadStatus(''), 4000);
     } catch (err) {
-      setUploadStatus('Lỗi tải lên!');
-      showToast('Lỗi tải tài liệu', 'error');
-    }
-    
-    // Reset input
-    if (fileInputRef.current) {
-      fileInputRef.current.value = '';
+      setUploadStatus('Upload thất bại');
+      showToast(err.message || 'Upload lỗi', 'error');
+    } finally {
+      if (fileInputRef.current) fileInputRef.current.value = '';
     }
   };
 
-  const renderMarkdown = (text) => {
-    return { __html: DOMPurify.sanitize(marked.parse(text)) };
-  };
+  const toolState = workspace[mode];
+  const cards = useMemo(() => (toolState?.raw ? parseFlashcards(toolState.raw) : null), [toolState?.raw]);
+  const questions = useMemo(() => (toolState?.raw ? parseQuiz(toolState.raw) : null), [toolState?.raw]);
 
-  const setPresetInput = (text) => {
-    setInput(text);
+  const renderToolContent = () => {
+    if (mode === 'chat') {
+      return (
+        <div className="study-chat-panel">
+          {messages.length === 0 ? (
+            <div className="study-empty">
+              <div className="empty-icon"><GraduationCap size={34} /></div>
+              <h3>Hỏi trực tiếp trên tài liệu của bạn</h3>
+              <p>Chọn tài liệu ở sidebar để các chức năng học tập bám đúng nội dung. Chat vẫn có thể hỏi tự do trên toàn bộ tài liệu của bạn.</p>
+              <div className="prompt-grid">
+                {[
+                  'Tóm tắt tài liệu này thành 5 ý chính',
+                  'Giải thích CI/CD theo tài liệu của tôi',
+                  'Những phần nào dễ ra kiểm tra?',
+                ].map((prompt) => (
+                  <button key={prompt} type="button" onClick={() => setInput(prompt)}>
+                    <Lightbulb size={15} />
+                    {prompt}
+                  </button>
+                ))}
+              </div>
+            </div>
+          ) : (
+            messages.map((msg, index) => (
+              <article key={`${msg.role}-${index}`} className={`message ${msg.role}`}>
+                <div className="avatar">{msg.role === 'user' ? 'U' : <Sparkles size={18} color="white" />}</div>
+                <div className="bubble">
+                  {msg.role === 'user' ? msg.content : msg.error ? (
+                    <div className="error-answer"><AlertCircle size={16} /> <span>{msg.content}</span></div>
+                  ) : (
+                    <>
+                      <MarkdownBlock text={msg.content} />
+                      <Citations citations={msg.citations} />
+                    </>
+                  )}
+                </div>
+              </article>
+            ))
+          )}
+
+          {loadingMode === 'chat' && (
+            <article className="message bot">
+              <div className="avatar"><Sparkles size={18} color="white" /></div>
+              <div className="bubble typing-line"><span className="spinner" />Đang đọc tài liệu...</div>
+            </article>
+          )}
+          <div ref={chatEndRef} />
+        </div>
+      );
+    }
+
+    if (loadingMode === mode) {
+      return (
+        <div className="tool-loading">
+          <span className="big-spinner" />
+          <h3>{actionCopy[mode].loading}</h3>
+          <p>StudyBot đang đọc tài liệu đã chọn và dựng màn hình học tập cho bạn.</p>
+        </div>
+      );
+    }
+
+    if (toolState?.error) {
+      return (
+        <div className="tool-empty error">
+          <AlertCircle size={28} />
+          <h3>Không tạo được nội dung</h3>
+          <p>{toolState.error}</p>
+          <button className="primary" onClick={() => generateTool(mode)}>Thử lại</button>
+        </div>
+      );
+    }
+
+    if (!toolState?.raw) {
+      return (
+        <div className="tool-empty">
+          <ActiveIcon size={34} />
+          <h3>{actionCopy[mode].empty}</h3>
+          <p>Tài liệu đang chọn: <strong>{selectedDocName}</strong></p>
+          <button className="primary" onClick={() => generateTool(mode)} disabled={!selectedDoc?.doc_id}>
+            <Play size={16} />
+            {actionCopy[mode].cta}
+          </button>
+        </div>
+      );
+    }
+
+    if (mode === 'summary') {
+      return (
+        <div className="tool-result summary-result">
+          <div className="result-meta">
+            <span>{toolState.doc?.filename || 'Tài liệu'}</span>
+            <span>Tạo lúc {toolState.generatedAt}</span>
+          </div>
+          <MarkdownBlock text={toolState.raw} />
+          <Citations citations={toolState.citations} />
+        </div>
+      );
+    }
+
+    if (mode === 'flashcard') {
+      return (
+        <div className="tool-result">
+          {cards ? <FlashcardViewer cards={cards} /> : <MarkdownBlock text={toolState.raw} />}
+          <Citations citations={toolState.citations} />
+        </div>
+      );
+    }
+
+    if (mode === 'quiz') {
+      return (
+        <div className="tool-result">
+          {questions ? <QuizViewer questions={questions} /> : <MarkdownBlock text={toolState.raw} />}
+          <Citations citations={toolState.citations} />
+        </div>
+      );
+    }
+
+    return null;
   };
 
   return (
-    <>
+    <section className="learn-workspace">
       {toast && (
         <div className="toasts">
-          <div className={`toast ${toast.type}`} style={{ animation: 'slidein 0.3s ease-out' }}>
-            <span style={{ display: 'flex' }}>
-              {toast.type === 'success' ? <CheckCircle2 color="var(--success)" size={20} /> :
-               toast.type === 'error' ? <AlertCircle color="var(--error)" size={20} /> :
-               <AlertCircle color="var(--accent)" size={20} />}
-            </span>
-            <div style={{ flex: 1 }}>{toast.msg}</div>
+          <div className={`toast ${toast.type}`}>
+            {toast.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+            <span>{toast.msg}</span>
           </div>
         </div>
       )}
 
-      {messages.length === 0 && (
-        <div className="top-upload-banner">
-          <input 
-            type="file" 
-            id="file-upload" 
-            style={{ display: 'none' }} 
-            onChange={handleFileUpload} 
+      <div className="study-command">
+        <div className="study-command-main">
+          <p className="eyebrow">Study workspace</p>
+          <h2>{activeMode.title}</h2>
+          <p>{activeMode.description}</p>
+          <div className={`selected-doc-pill ${selectedDoc?.doc_id ? 'ready' : ''}`}>
+            <FileText size={14} />
+            <span>{selectedDocName}</span>
+          </div>
+        </div>
+
+        <div className="mode-tabs">
+          {Object.entries(MODES).map(([key, item]) => {
+            const Icon = item.icon;
+            return (
+              <button
+                key={key}
+                className={`mode-tab ${mode === key ? 'active' : ''}`}
+                type="button"
+                onClick={() => setMode(key)}
+              >
+                <Icon size={17} />
+                <span>{item.label}</span>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+
+      <div className="workspace-grid">
+        <div className="upload-panel">
+          <input
             ref={fileInputRef}
+            type="file"
+            id="file-upload"
+            onChange={handleUpload}
+            accept=".pdf,.txt,.md,.csv,.doc,.docx"
+            hidden
           />
-          <div 
-            className="drop-compact" 
-            onClick={() => fileInputRef.current?.click()}
-          >
-            <UploadCloud size={18} />
-            Kéo thả hoặc nhấn để tải tài liệu (PDF, TXT, MD)
+          <button className="upload-card wide" type="button" onClick={() => fileInputRef.current?.click()}>
+            <UploadCloud size={20} />
+            <span>
+              <strong>Tải tài liệu mới</strong>
+              <small>PDF, TXT, MD, CSV hoặc Word</small>
+            </span>
+          </button>
+          <div className="sync-note">
+            <Sparkles size={16} />
+            {uploadStatus || 'Tệp được lưu S3, ghi DB và sync vào Bedrock Knowledge Base.'}
           </div>
-          {uploadStatus && (
-            <div style={{ fontSize: '0.85rem', color: uploadStatus.includes('Lỗi') ? 'var(--error)' : 'var(--success)' }}>
-              {uploadStatus}
-            </div>
-          )}
+        </div>
+
+        {mode !== 'chat' && (
+          <div className="tool-action-bar">
+            <button className="primary" onClick={() => generateTool(mode)} disabled={isBusy || !selectedDoc?.doc_id}>
+              <Play size={16} />
+              {workspace[mode]?.raw ? `Tạo lại ${MODES[mode].label}` : actionCopy[mode].cta}
+            </button>
+          </div>
+        )}
+      </div>
+
+      <div className={`workspace-stage mode-${mode}`}>
+        {renderToolContent()}
+      </div>
+
+      {mode === 'chat' && (
+        <div className="input-area">
+          <div className="input-container">
+            <input
+              className="chat-input"
+              value={input}
+              onChange={(event) => setInput(event.target.value)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter') sendQuestion();
+              }}
+              placeholder="Hỏi bất cứ điều gì về tài liệu..."
+              disabled={isBusy}
+            />
+            <button className="send-btn" type="button" onClick={sendQuestion} disabled={!input.trim() || isBusy}>
+              <Send size={18} />
+            </button>
+          </div>
         </div>
       )}
-
-      <div className="chat-area">
-        {messages.length === 0 ? (
-          <div className="welcome-state">
-            <h2>Xin chào!</h2>
-            <p>Hôm nay bạn muốn học gì? Mình có thể tóm tắt tài liệu, giải thích khái niệm, hoặc tạo bài tập trắc nghiệm giúp bạn.</p>
-            <div className="suggestion-chips">
-              <div className="chip" onClick={() => handleSpecialAction('summary')}>
-                <FileText size={16} /> Tóm tắt tài liệu
-              </div>
-              <div className="chip" onClick={() => handleSpecialAction('flashcard')}>
-                <BookOpen size={16} /> Tạo Flashcard
-              </div>
-              <div className="chip" onClick={() => handleSpecialAction('quiz')}>
-                <AlertCircle size={16} /> Tạo trắc nghiệm
-              </div>
-            </div>
-          </div>
-        ) : (
-          messages.map((msg, idx) => (
-            <div key={idx} className={`message ${msg.role}`}>
-              <div className="avatar">
-                {msg.role === 'user' ? 'U' : <Sparkles size={20} color="white" />}
-              </div>
-              <div className="bubble">
-                {msg.role === 'user' ? (
-                  msg.content
-                ) : msg.error ? (
-                  <div style={{ color: 'var(--error)', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-                    <AlertCircle size={16} /> {msg.content}
-                  </div>
-                ) : (
-                  <>
-                    {(() => {
-                      const cards = parseFlashcards(msg.content);
-                      if (cards) {
-                        return (
-                          <div>
-                            <div style={{ marginBottom: '1rem', color: 'var(--muted)', fontSize: '0.9rem' }}>
-                              Đã tạo thành công {cards.length} thẻ flashcard!
-                            </div>
-                            <FlashcardViewer cards={cards} />
-                          </div>
-                        );
-                      }
-
-                      const quiz = parseQuiz(msg.content);
-                      if (quiz) {
-                        return (
-                          <div>
-                            <div style={{ marginBottom: '1rem', color: 'var(--muted)', fontSize: '0.9rem' }}>
-                              Đã tạo thành công {quiz.length} câu hỏi trắc nghiệm!
-                            </div>
-                            <QuizViewer questions={quiz} />
-                          </div>
-                        );
-                      }
-
-                      return <div dangerouslySetInnerHTML={renderMarkdown(msg.content)} />;
-                    })()}
-                    {msg.citations && msg.citations.length > 0 && (
-                      <div className="citations-block">
-                        <div style={{ fontSize: '0.8rem', fontWeight: 600, color: 'var(--muted)', marginBottom: '0.5rem', textTransform: 'uppercase' }}>
-                          Nguồn tham khảo:
-                        </div>
-                        {msg.citations.map((c, i) => (
-                          <div key={i} className="citation">
-                            <strong style={{ color: 'var(--accent)' }}>{c.doc_id}</strong>
-                            <div style={{ color: 'var(--muted)', marginTop: '0.25rem', display: '-webkit-box', WebkitLineClamp: 2, WebkitBoxOrient: 'vertical', overflow: 'hidden' }}>
-                              {c.text}
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </>
-                )}
-              </div>
-            </div>
-          ))
-        )}
-        
-        {isSending && (
-          <div className="message bot">
-            <div className="avatar">
-              <Sparkles size={20} color="white" />
-            </div>
-            <div className="bubble" style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', color: 'var(--muted)' }}>
-              <span className="spinner"></span> Đang suy nghĩ...
-            </div>
-          </div>
-        )}
-        <div ref={chatEndRef} />
-      </div>
-
-      <div className="input-area">
-        {messages.length > 0 && (
-          <div className="quick-actions-bar">
-            <button className="quick-action-btn" onClick={() => handleSpecialAction('summary')}>
-              <FileText size={14} /> Tóm tắt
-            </button>
-            <button className="quick-action-btn" onClick={() => handleSpecialAction('flashcard')}>
-              <BookOpen size={14} /> Flashcard
-            </button>
-            <button className="quick-action-btn" onClick={() => handleSpecialAction('quiz')}>
-              <AlertCircle size={14} /> Trắc nghiệm
-            </button>
-          </div>
-        )}
-        <div className="input-container">
-          <input 
-            type="text" 
-            className="chat-input" 
-            placeholder="Hỏi bất cứ điều gì về tài liệu..." 
-            value={input}
-            onChange={(e) => setInput(e.target.value)}
-            onKeyDown={(e) => e.key === 'Enter' && handleSend()}
-            disabled={isSending}
-            autoFocus
-          />
-          <button 
-            className="send-btn" 
-            onClick={() => handleSend()}
-            disabled={!input.trim() || isSending}
-          >
-            <Send size={18} />
-          </button>
-        </div>
-      </div>
-    </>
+    </section>
   );
 };
 

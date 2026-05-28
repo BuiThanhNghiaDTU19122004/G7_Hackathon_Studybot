@@ -34,6 +34,8 @@ const AuthGuard = ({ children }) => {
 };
 
 function App() {
+  const [selectedDoc, setSelectedDoc] = useState(null);
+
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
     document.documentElement.setAttribute('data-theme', savedTheme);
@@ -46,8 +48,8 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/" element={
           <AuthGuard>
-            <Layout>
-              <ChatView />
+            <Layout selectedDoc={selectedDoc} setSelectedDoc={setSelectedDoc}>
+              <ChatView selectedDoc={selectedDoc} />
             </Layout>
           </AuthGuard>
         } />

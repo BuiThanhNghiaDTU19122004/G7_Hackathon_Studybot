@@ -12,8 +12,8 @@ import base64
 import json
 from pathlib import Path
 
-from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
@@ -30,10 +30,11 @@ app = FastAPI(title="StudyBot — W7 Capstone Starter")
 # CORS — allow frontend to live on a different origin (CloudFront / Amplify / separate ALB).
 # CORS_ORIGINS env var controls this; default '*' is permissive for hackathon.
 _allowed = ["*"] if config.cors_origins == "*" else [o.strip() for o in config.cors_origins.split(",") if o.strip()]
+_allow_credentials = config.cors_origins != "*"
 app.add_middleware(
     CORSMiddleware,
     allow_origins=_allowed,
-    allow_credentials=True,
+    allow_credentials=_allow_credentials,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -87,6 +88,13 @@ class QuizRequest(BaseModel):
 
 class FlashcardRequest(BaseModel):
     count: int = 8
+
+
+class ActionRequest(BaseModel):
+    action_type: str
+    doc_id: str | None = None
+    count: int | None = None
+    difficulty: str = "medium"
 
 
 @app.get("/health")
@@ -191,6 +199,69 @@ def flashcards(
         vector_backend=config.vector_backend,
         bedrock_kb_id=config.vector_bedrock_kb_id,
     )
+
+
+@app.post("/action")
+def document_action(
+    req: ActionRequest,
+    x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user_id = _resolve_user_id(x_user_id, authorization)
+    action_type = req.action_type.strip().lower()
+
+    if action_type in {"summary", "summarize"}:
+        result = handlers.handle_summarize(
+            user_id=user_id,
+            ai_client=ai_client,
+            userstore=userstore,
+            vector_store=vector_store,
+            vector_backend=config.vector_backend,
+            bedrock_kb_id=config.vector_bedrock_kb_id,
+            doc_id=req.doc_id,
+        )
+        return {
+            "question": "Generate study summary",
+            "answer": result["summary"],
+            "citations": result.get("citations", []),
+        }
+
+    if action_type in {"flashcard", "flashcards"}:
+        result = handlers.handle_flashcards(
+            user_id=user_id,
+            count=req.count or 8,
+            ai_client=ai_client,
+            userstore=userstore,
+            vector_store=vector_store,
+            vector_backend=config.vector_backend,
+            bedrock_kb_id=config.vector_bedrock_kb_id,
+            doc_id=req.doc_id,
+        )
+        return {
+            "question": "Generate flashcards",
+            "answer": result["flashcards"],
+            "citations": result.get("citations", []),
+        }
+
+    if action_type in {"quiz", "quizzes"}:
+        result = handlers.handle_quiz(
+            user_id=user_id,
+            count=req.count or 5,
+            difficulty=req.difficulty,
+            ai_client=ai_client,
+            userstore=userstore,
+            vector_store=vector_store,
+            vector_backend=config.vector_backend,
+            bedrock_kb_id=config.vector_bedrock_kb_id,
+            doc_id=req.doc_id,
+        )
+        return {
+            "question": f"Generate {result['difficulty']} quiz",
+            "answer": result["quiz"],
+            "citations": result.get("citations", []),
+        }
+
+    raise HTTPException(status_code=400, detail="Unknown action_type. Use summary, flashcard, or quiz.")
 
 
 @app.get("/study-plan")

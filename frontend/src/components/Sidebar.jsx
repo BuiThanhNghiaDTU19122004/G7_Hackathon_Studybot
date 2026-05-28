@@ -1,120 +1,151 @@
-import React, { useState, useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'aws-amplify/auth';
-import { LogOut, Plus, FileText, Menu, Sparkles, X } from 'lucide-react';
+import { BookOpen, FileText, History, LogOut, Plus, Sparkles, X } from 'lucide-react';
 
-const Sidebar = ({ isOpen, setIsOpen, docs }) => {
+const Sidebar = ({ isOpen, setIsOpen, docs, recent, isLoading, selectedDoc, setSelectedDoc }) => {
   const navigate = useNavigate();
   const [chatHistory, setChatHistory] = useState([]);
 
   useEffect(() => {
-    const history = JSON.parse(localStorage.getItem('studybot_history') || '[]');
-    setChatHistory(history);
+    const loadHistory = () => {
+      setChatHistory(JSON.parse(localStorage.getItem('studybot_history') || '[]'));
+    };
+    loadHistory();
+    window.addEventListener('history-updated', loadHistory);
+    return () => window.removeEventListener('history-updated', loadHistory);
   }, []);
 
-  const handleLogout = async () => {
-    try {
-      await signOut();
-    } catch (error) {
-      console.error('Lỗi đăng xuất:', error);
-    }
-    navigate('/login');
+  const startNewChat = () => {
+    navigate('/');
+    setIsOpen(false);
+    window.setTimeout(() => window.dispatchEvent(new Event('new-chat')), 50);
   };
 
-  const handleClearHistory = () => {
-    if (!window.confirm('Bạn có chắc chắn muốn xóa toàn bộ lịch sử chat không?')) return;
+  const clearHistory = () => {
     localStorage.setItem('studybot_history', '[]');
     setChatHistory([]);
     window.dispatchEvent(new Event('history-updated'));
   };
 
-  const deleteHistoryItem = (e, index) => {
-    e.stopPropagation();
-    const newHistory = [...chatHistory];
-    newHistory.splice(index, 1);
-    localStorage.setItem('studybot_history', JSON.stringify(newHistory));
-    setChatHistory(newHistory);
+  const deleteHistoryItem = (event, index) => {
+    event.stopPropagation();
+    const next = [...chatHistory];
+    next.splice(index, 1);
+    localStorage.setItem('studybot_history', JSON.stringify(next));
+    setChatHistory(next);
     window.dispatchEvent(new Event('history-updated'));
   };
 
-  // Listen for history updates from ChatView
-  useEffect(() => {
-    const handleHistoryUpdate = () => {
-      setChatHistory(JSON.parse(localStorage.getItem('studybot_history') || '[]'));
-    };
-    window.addEventListener('history-updated', handleHistoryUpdate);
-    return () => window.removeEventListener('history-updated', handleHistoryUpdate);
-  }, []);
+  const handleLogout = async () => {
+    try {
+      await signOut();
+    } finally {
+      navigate('/login');
+    }
+  };
 
   return (
     <>
-      <aside className={`sidebar ${isOpen ? 'open' : ''}`} id="sidebar">
-        <div className="sidebar-header" style={{ cursor: 'pointer' }} onClick={() => navigate('/')}>
+      <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
+        <button className="sidebar-header" onClick={startNewChat}>
           <div className="logo">
             <Sparkles color="white" size={20} />
           </div>
-          <h1>StudyBot</h1>
-        </div>
-
-        <button className="primary new-chat-btn" onClick={() => { navigate('/'); setTimeout(() => window.dispatchEvent(new Event('new-chat')), 50); }}>
-          <Plus size={18} />
-          Chat Mới
+          <div>
+            <h1>StudyBot</h1>
+            <p>Không gian học tập</p>
+          </div>
         </button>
 
+        <button className="primary new-chat-btn" onClick={startNewChat}>
+          <Plus size={18} />
+          Chat mới
+        </button>
+
+        <div className="sidebar-metrics">
+          <div>
+            <strong>{docs.length}</strong>
+            <span>Tài liệu</span>
+          </div>
+          <div>
+            <strong>{recent.length}</strong>
+            <span>Lượt hỏi</span>
+          </div>
+        </div>
+
         <div className="sidebar-section">
-          <div className="section-title">Tài liệu của bạn</div>
+          <div className="section-title">
+            <BookOpen size={14} />
+            Tài liệu của bạn
+          </div>
           <div className="sidebar-list">
-            {docs.length === 0 ? (
-              <div className="muted" style={{ fontSize: '0.8rem', padding: '0.5rem 0' }}>Chưa có tài liệu</div>
+            {isLoading ? (
+              <>
+                <div className="skeleton-row" />
+                <div className="skeleton-row" />
+              </>
+            ) : docs.length === 0 ? (
+              <div className="empty-sidebar">Chưa có tài liệu nào.</div>
             ) : (
-              docs.map((doc, idx) => (
-                <div key={idx} className="sidebar-doc-item" title={doc.filename || doc.doc_id}>
+              docs.slice(0, 8).map((doc) => (
+                <button
+                  key={doc.doc_id || doc.filename}
+                  className={`sidebar-doc-item ${selectedDoc?.doc_id === doc.doc_id ? 'active' : ''}`}
+                  title={doc.filename || doc.doc_id}
+                  onClick={() => {
+                    setSelectedDoc(doc);
+                    setIsOpen(false);
+                    window.dispatchEvent(new CustomEvent('doc-selected', { detail: doc }));
+                  }}
+                >
                   <FileText size={16} />
-                  <div className="sidebar-doc-item-text">{doc.filename || doc.doc_id}</div>
-                </div>
+                  <span>{doc.filename || doc.doc_id}</span>
+                </button>
               ))
             )}
           </div>
         </div>
 
-        <div className="sidebar-section" style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
-          <div className="section-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-            Lịch sử Chat
-            <button 
-              style={{ background: 'transparent', border: 'none', color: 'var(--muted)', cursor: 'pointer', padding: '2px', display: 'flex', alignItems: 'center' }} 
-              onClick={handleClearHistory} 
-              title="Xóa lịch sử"
-            >
-              <X size={14} />
-            </button>
+        <div className="sidebar-section history-section">
+          <div className="section-title section-title-row">
+            <span><History size={14} /> Lịch sử hỏi</span>
+            {chatHistory.length > 0 && (
+              <button className="ghost-mini" onClick={clearHistory} title="Xóa lịch sử">
+                <X size={13} />
+              </button>
+            )}
           </div>
           <div className="history-list">
             {chatHistory.length === 0 ? (
-              <div className="muted" style={{ textAlign: 'center', fontSize: '0.85rem', padding: '1rem 0' }}>Chưa có lịch sử</div>
+              <div className="empty-sidebar">Chưa có câu hỏi nào.</div>
             ) : (
-              chatHistory.map((q, i) => (
-                <div key={i} className="history-item" onClick={() => { navigate('/'); setTimeout(() => window.dispatchEvent(new CustomEvent('load-history', { detail: i })), 50); }}>
-                  <div className="history-item-text" style={{ flex: 1 }}>{q}</div>
-                  <button className="history-item-delete" onClick={(e) => deleteHistoryItem(e, i)} title="Xóa">
-                    <X size={14} />
-                  </button>
-                </div>
+              chatHistory.map((prompt, index) => (
+                <button
+                  key={`${prompt}-${index}`}
+                  className="history-item"
+                  onClick={() => {
+                    navigate('/');
+                    setIsOpen(false);
+                    window.setTimeout(() => window.dispatchEvent(new CustomEvent('load-history', { detail: index })), 50);
+                  }}
+                >
+                  <span>{prompt}</span>
+                  <X size={13} onClick={(event) => deleteHistoryItem(event, index)} />
+                </button>
               ))
             )}
           </div>
         </div>
 
-        <div className="sidebar-section" style={{ marginTop: 'auto', paddingTop: '1rem', borderTop: '1px solid var(--border)', marginBottom: '1rem' }}>
-          <button 
-            style={{ width: 'calc(100% - 2.5rem)', margin: '0 auto', padding: '0.5rem', background: 'transparent', border: '1px solid var(--border)', color: 'var(--text)', borderRadius: '8px', cursor: 'pointer', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '0.5rem', fontSize: '0.85rem' }} 
-            onClick={handleLogout}
-          >
+        <div className="sidebar-footer">
+          <button className="logout-button" onClick={handleLogout}>
             <LogOut size={16} />
             Đăng xuất
           </button>
         </div>
       </aside>
-      <div className="sidebar-overlay" onClick={() => setIsOpen(false)}></div>
+      <div className="sidebar-overlay" onClick={() => setIsOpen(false)} />
     </>
   );
 };

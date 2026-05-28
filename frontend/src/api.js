@@ -2,26 +2,26 @@ import { fetchAuthSession, getCurrentUser } from 'aws-amplify/auth';
 
 const API_BASE = import.meta.env.VITE_API_BASE || '';
 
-export const callApi = async (path, opts = {}) => {
-  const headers = new Headers(opts.headers || {});
-  
+const addAuthHeaders = async (headers) => {
   try {
     const session = await fetchAuthSession();
     const token = session.tokens?.idToken?.toString();
     const user = await getCurrentUser();
-    
-    headers.set('X-User-Id', user.username || 'cognito-user');
-    
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`);
-    }
+
+    headers.set('X-User-Id', user.userId || user.username || 'cognito-user');
+    if (token) headers.set('Authorization', `Bearer ${token}`);
   } catch (err) {
     console.warn('Không lấy được phiên đăng nhập', err);
   }
+};
+
+export const callApi = async (path, opts = {}) => {
+  const headers = new Headers(opts.headers || {});
+  await addAuthHeaders(headers);
 
   const response = await fetch(`${API_BASE}${path}`, {
     ...opts,
-    headers
+    headers,
   });
 
   if (!response.ok) {
@@ -35,26 +35,14 @@ export const callApi = async (path, opts = {}) => {
 export const uploadFile = async (file) => {
   const formData = new FormData();
   formData.append('file', file);
-  
+
   const headers = new Headers();
-  
-  try {
-    const session = await fetchAuthSession();
-    const token = session.tokens?.idToken?.toString();
-    const user = await getCurrentUser();
-    
-    headers.set('X-User-Id', user.username || 'cognito-user');
-    if (token) {
-      headers.set('Authorization', `Bearer ${token}`);
-    }
-  } catch (err) {
-    console.warn('Không lấy được phiên đăng nhập', err);
-  }
+  await addAuthHeaders(headers);
 
   const response = await fetch(`${API_BASE}/upload`, {
     method: 'POST',
     headers,
-    body: formData
+    body: formData,
   });
 
   if (!response.ok) {
@@ -66,9 +54,12 @@ export const uploadFile = async (file) => {
 };
 
 export const callDocumentAction = async (actionType, docId = null) => {
+  const payload = { action_type: actionType };
+  if (docId) payload.doc_id = docId;
+
   return callApi('/action', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ action_type: actionType, doc_id: docId })
+    body: JSON.stringify(payload),
   });
 };

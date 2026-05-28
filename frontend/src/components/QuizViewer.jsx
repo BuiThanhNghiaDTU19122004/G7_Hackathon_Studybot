@@ -10,54 +10,54 @@ const QuizViewer = ({ questions }) => {
 
   const handleSelect = (qIndex, optionLetter) => {
     if (showResults) return;
-    setAnswers(prev => ({ ...prev, [qIndex]: optionLetter }));
+    setAnswers((prev) => ({ ...prev, [qIndex]: optionLetter }));
   };
 
   const calculateScore = () => {
     let score = 0;
-    questions.forEach((q, i) => {
-      if (answers[i] === q.correctAnswer) score++;
+    questions.forEach((question, index) => {
+      if (answers[index] === question.correctAnswer) score += 1;
     });
     return score;
   };
 
   return (
     <div className="quiz-container">
-      {questions.map((q, qIndex) => (
+      {questions.map((question, qIndex) => (
         <div key={qIndex} className="quiz-card">
           <div className="quiz-question">
-            <strong>Câu {qIndex + 1}:</strong> {q.questionText}
+            <strong>Câu {qIndex + 1}:</strong> {question.questionText}
           </div>
           <div className="quiz-options">
-            {q.options.map((opt, oIndex) => {
-              const isSelected = answers[qIndex] === opt.letter;
-              const isCorrect = q.correctAnswer === opt.letter;
+            {question.options.map((option, oIndex) => {
+              const isSelected = answers[qIndex] === option.letter;
+              const isCorrect = question.correctAnswer === option.letter;
               let optionClass = 'quiz-option';
-              
+
               if (isSelected) optionClass += ' selected';
-              
               if (showResults) {
                 if (isCorrect) optionClass += ' correct';
                 else if (isSelected && !isCorrect) optionClass += ' incorrect';
               }
 
               return (
-                <div 
-                  key={oIndex} 
+                <button
+                  key={oIndex}
+                  type="button"
                   className={optionClass}
-                  onClick={() => handleSelect(qIndex, opt.letter)}
+                  onClick={() => handleSelect(qIndex, option.letter)}
                 >
-                  <span className="quiz-option-letter">{opt.letter}</span>
-                  <span className="quiz-option-text">{opt.text}</span>
+                  <span className="quiz-option-letter">{option.letter}</span>
+                  <span className="quiz-option-text">{option.text}</span>
                   {showResults && isCorrect && <CheckCircle2 size={18} className="quiz-icon-correct" />}
                   {showResults && isSelected && !isCorrect && <XCircle size={18} className="quiz-icon-incorrect" />}
-                </div>
+                </button>
               );
             })}
           </div>
-          {showResults && q.explanation && (
+          {showResults && question.explanation && (
             <div className="quiz-explanation">
-              <strong>Giải thích:</strong> {q.explanation}
+              <strong>Giải thích:</strong> {question.explanation}
             </div>
           )}
         </div>
@@ -65,8 +65,8 @@ const QuizViewer = ({ questions }) => {
 
       <div className="quiz-footer">
         {!showResults ? (
-          <button 
-            className="quiz-btn primary" 
+          <button
+            className="quiz-btn primary"
             onClick={() => setShowResults(true)}
             disabled={Object.keys(answers).length !== questions.length}
           >

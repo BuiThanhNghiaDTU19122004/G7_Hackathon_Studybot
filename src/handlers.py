@@ -28,7 +28,7 @@ def _citations_from_chunks(chunks: list[dict]) -> list[dict]:
     ]
 
 
-def _fallback_local_chunks(user_id: str, vector_store, top_k: int = 8) -> list[dict]:
+def _fallback_local_chunks(user_id: str, vector_store, top_k: int = 8, doc_id: str | None = None) -> list[dict]:
     """Return recent local chunks when a task prompt has no keyword match.
     The production Bedrock KB path does semantic retrieval. LocalVector is only a
     keyword stub, so generic actions like "summarize this lecture" need a small
@@ -41,6 +41,8 @@ def _fallback_local_chunks(user_id: str, vector_store, top_k: int = 8) -> list[d
     for chunk_id, text, md in docs:
         if md.get("user_id") != user_id:
             continue
+        if doc_id and md.get("doc_id") != doc_id:
+            continue
         chunks.append({
             "text": text,
             "doc_id": md.get("doc_id", chunk_id),
@@ -50,15 +52,23 @@ def _fallback_local_chunks(user_id: str, vector_store, top_k: int = 8) -> list[d
     return chunks[:top_k]
 
 
+def _metadata_filter(user_id: str, doc_id: str | None = None) -> dict:
+    metadata = {"user_id": user_id}
+    if doc_id:
+        metadata["doc_id"] = doc_id
+    return metadata
+
+
 def _retrieve_context(
     user_id: str,
     query: str,
     vector_store,
     top_k: int = 8,
+    doc_id: str | None = None,
 ) -> tuple[str, list[dict]]:
-    chunks = vector_store.search(query, top_k=top_k, filter={"user_id": user_id})
+    chunks = vector_store.search(query, top_k=top_k, filter=_metadata_filter(user_id, doc_id))
     if not chunks:
-        chunks = _fallback_local_chunks(user_id, vector_store, top_k=top_k)
+        chunks = _fallback_local_chunks(user_id, vector_store, top_k=top_k, doc_id=doc_id)
     return _context_from_chunks(chunks), _citations_from_chunks(chunks)
 
 
@@ -153,21 +163,23 @@ def handle_summarize(
     vector_store,
     vector_backend: str,
     bedrock_kb_id: str,
+    doc_id: str | None = None,
 ) -> dict:
     task = (
-        "Summarize the uploaded lecture notes into: 1) five key ideas, "
-        "2) terms to remember, and 3) likely exam points."
+        "Summarize ONLY the selected uploaded document. Write in Vietnamese. "
+        "Use these Markdown sections exactly: ## 5 ý chính, ## Thuật ngữ cần nhớ, "
+        "## Điểm dễ ra kiểm tra, ## Gợi ý ôn tập. Be concise and grounded in the document."
     )
     if vector_backend == "bedrock_kb":
         result = ai_client.retrieve_and_generate(
             query=task,
             kb_id=bedrock_kb_id,
-            filter={"user_id": user_id},
+            filter=_metadata_filter(user_id, doc_id),
         )
         summary = result["answer"]
         citations = result["citations"]
     else:
-        context, citations = _retrieve_context(user_id, task, vector_store, top_k=10)
+        context, citations = _retrieve_context(user_id, task, vector_store, top_k=10, doc_id=doc_id)
         if not context:
             summary = "No uploaded study material found. Upload a lecture first."
             citations = []
@@ -197,20 +209,32 @@ def handle_quiz(
     vector_store,
     vector_backend: str,
     bedrock_kb_id: str,
+    doc_id: str | None = None,
 ) -> dict:
     count = max(3, min(count, 10))
     difficulty = difficulty if difficulty in {"easy", "medium", "hard"} else "medium"
-    task = f"Generate {count} {difficulty} quiz questions from the uploaded lecture notes."
+    task = (
+        f"Generate exactly {count} {difficulty} multiple-choice quiz questions from ONLY the selected uploaded document. "
+        "Write in Vietnamese. Use this exact plain-text format for every question:\n"
+        "Câu 1: [question]\n"
+        "A. [option]\n"
+        "B. [option]\n"
+        "C. [option]\n"
+        "D. [option]\n"
+        "Đáp án đúng: [A/B/C/D]\n"
+        "Giải thích: [one sentence]\n"
+        "Do not add extra formats outside the questions."
+    )
     if vector_backend == "bedrock_kb":
         result = ai_client.retrieve_and_generate(
             query=task,
             kb_id=bedrock_kb_id,
-            filter={"user_id": user_id},
+            filter=_metadata_filter(user_id, doc_id),
         )
         quiz = result["answer"]
         citations = result["citations"]
     else:
-        context, citations = _retrieve_context(user_id, task, vector_store, top_k=10)
+        context, citations = _retrieve_context(user_id, task, vector_store, top_k=10, doc_id=doc_id)
         if not context:
             quiz = "No uploaded study material found. Upload a lecture first."
             citations = []
@@ -241,19 +265,26 @@ def handle_flashcards(
     vector_store,
     vector_backend: str,
     bedrock_kb_id: str,
+    doc_id: str | None = None,
 ) -> dict:
     count = max(5, min(count, 20))
-    task = f"Generate {count} flashcards from the uploaded lecture notes."
+    task = (
+        f"Generate exactly {count} flashcards from ONLY the selected uploaded document. "
+        "Write in Vietnamese. Use this exact plain-text format for every card:\n"
+        "Front: [term or question]\n"
+        "Back: [short answer]\n"
+        "Do not add bullets, tables, or explanations outside Front/Back pairs."
+    )
     if vector_backend == "bedrock_kb":
         result = ai_client.retrieve_and_generate(
             query=task,
             kb_id=bedrock_kb_id,
-            filter={"user_id": user_id},
+            filter=_metadata_filter(user_id, doc_id),
         )
         flashcards = result["answer"]
         citations = result["citations"]
     else:
-        context, citations = _retrieve_context(user_id, task, vector_store, top_k=10)
+        context, citations = _retrieve_context(user_id, task, vector_store, top_k=10, doc_id=doc_id)
         if not context:
             flashcards = "No uploaded study material found. Upload a lecture first."
             citations = []

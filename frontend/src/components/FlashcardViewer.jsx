@@ -10,19 +10,19 @@ const FlashcardViewer = ({ cards }) => {
 
   const currentCard = cards[currentIndex];
 
-  const handleNext = (e) => {
-    e.stopPropagation();
+  const handleNext = (event) => {
+    event.stopPropagation();
     if (currentIndex < cards.length - 1) {
       setIsFlipped(false);
-      setTimeout(() => setCurrentIndex(prev => prev + 1), 150);
+      window.setTimeout(() => setCurrentIndex((prev) => prev + 1), 150);
     }
   };
 
-  const handlePrev = (e) => {
-    e.stopPropagation();
+  const handlePrev = (event) => {
+    event.stopPropagation();
     if (currentIndex > 0) {
       setIsFlipped(false);
-      setTimeout(() => setCurrentIndex(prev => prev - 1), 150);
+      window.setTimeout(() => setCurrentIndex((prev) => prev - 1), 150);
     }
   };
 
@@ -51,18 +51,10 @@ const FlashcardViewer = ({ cards }) => {
       </div>
 
       <div className="flashcard-controls">
-        <button 
-          className="flashcard-btn" 
-          onClick={handlePrev} 
-          disabled={currentIndex === 0}
-        >
+        <button className="flashcard-btn" onClick={handlePrev} disabled={currentIndex === 0}>
           <ChevronLeft size={20} /> Trước
         </button>
-        <button 
-          className="flashcard-btn primary" 
-          onClick={handleNext} 
-          disabled={currentIndex === cards.length - 1}
-        >
+        <button className="flashcard-btn primary" onClick={handleNext} disabled={currentIndex === cards.length - 1}>
           Tiếp <ChevronRight size={20} />
         </button>
       </div>
