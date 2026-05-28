@@ -3,15 +3,23 @@ import { useNavigate } from 'react-router-dom';
 import { signOut } from 'aws-amplify/auth';
 import { BookOpen, FileText, History, LogOut, Plus, Sparkles, Trash2, X } from 'lucide-react';
 
-const Sidebar = ({ isOpen, setIsOpen, docs, recent, isLoading, selectedDoc, setSelectedDoc, onDeleteDoc }) => {
+const Sidebar = ({
+  isOpen,
+  setIsOpen,
+  docs,
+  recent,
+  isLoading,
+  selectedDoc,
+  setSelectedDoc,
+  onDeleteDoc,
+  setActiveView,
+}) => {
   const navigate = useNavigate();
   const [chatHistory, setChatHistory] = useState([]);
   const [deletingDocId, setDeletingDocId] = useState('');
 
   useEffect(() => {
-    const loadHistory = () => {
-      setChatHistory(JSON.parse(localStorage.getItem('studybot_history') || '[]'));
-    };
+    const loadHistory = () => setChatHistory(JSON.parse(localStorage.getItem('studybot_history') || '[]'));
     loadHistory();
     window.addEventListener('history-updated', loadHistory);
     return () => window.removeEventListener('history-updated', loadHistory);
@@ -19,6 +27,7 @@ const Sidebar = ({ isOpen, setIsOpen, docs, recent, isLoading, selectedDoc, setS
 
   const startNewChat = () => {
     navigate('/');
+    setActiveView?.('study');
     setIsOpen(false);
     window.setTimeout(() => window.dispatchEvent(new Event('new-chat')), 50);
   };
@@ -62,30 +71,30 @@ const Sidebar = ({ isOpen, setIsOpen, docs, recent, isLoading, selectedDoc, setS
   return (
     <>
       <aside className={`sidebar ${isOpen ? 'open' : ''}`}>
-        <button className="sidebar-header" onClick={startNewChat}>
+        <button className="sidebar-header" onClick={() => setActiveView?.('dashboard')} type="button">
           <div className="logo">
             <Sparkles color="white" size={20} />
           </div>
           <div>
             <h1>StudyBot</h1>
-            <p>Không gian học tập</p>
+            <p>AI learning workspace</p>
           </div>
         </button>
 
         <button className="primary new-chat-btn" onClick={startNewChat}>
           <Plus size={18} />
-          Chat mới
+          Phiên học mới
         </button>
 
         <div className="sidebar-metrics">
-          <div>
+          <button type="button" onClick={() => setActiveView?.('documents')}>
             <strong>{docs.length}</strong>
             <span>Tài liệu</span>
-          </div>
-          <div>
+          </button>
+          <button type="button" onClick={() => setActiveView?.('insights')}>
             <strong>{recent.length}</strong>
             <span>Lượt hỏi</span>
-          </div>
+          </button>
         </div>
 
         <div className="sidebar-section">
@@ -112,6 +121,7 @@ const Sidebar = ({ isOpen, setIsOpen, docs, recent, isLoading, selectedDoc, setS
                     title={doc.filename || doc.doc_id}
                     onClick={() => {
                       setSelectedDoc(doc);
+                      setActiveView?.('study');
                       setIsOpen(false);
                       window.dispatchEvent(new CustomEvent('doc-selected', { detail: doc }));
                     }}
@@ -153,6 +163,7 @@ const Sidebar = ({ isOpen, setIsOpen, docs, recent, isLoading, selectedDoc, setS
                   className="history-item"
                   onClick={() => {
                     navigate('/');
+                    setActiveView?.('study');
                     setIsOpen(false);
                     window.setTimeout(() => window.dispatchEvent(new CustomEvent('load-history', { detail: index })), 50);
                   }}
@@ -166,6 +177,10 @@ const Sidebar = ({ isOpen, setIsOpen, docs, recent, isLoading, selectedDoc, setS
         </div>
 
         <div className="sidebar-footer">
+          <div className="mini-health">
+            <span />
+            {recent.length ? `${recent.length} câu hỏi gần đây` : 'Sẵn sàng học'}
+          </div>
           <button className="logout-button" onClick={handleLogout}>
             <LogOut size={16} />
             Đăng xuất

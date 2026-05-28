@@ -13,6 +13,7 @@ import {
   Sparkles,
   UploadCloud,
 } from 'lucide-react';
+import { AnimatePresence, motion } from 'framer-motion';
 import { marked } from 'marked';
 import DOMPurify from 'dompurify';
 import { callApi, callDocumentAction, uploadFile } from '../api';
@@ -98,15 +99,42 @@ const MarkdownBlock = ({ text }) => (
 
 const Citations = ({ citations = [] }) => {
   if (!citations.length) return null;
+  const unique = citations.filter((citation, index, arr) => (
+    arr.findIndex((item) => citationTitle(item) === citationTitle(citation)) === index
+  ));
   return (
     <div className="citations-block">
       <div className="source-title">Nguồn tham khảo</div>
-      {citations.map((citation, index) => (
+      {unique.map((citation, index) => (
         <div key={`${citationTitle(citation)}-${index}`} className="citation">
           <strong>{citationTitle(citation)}</strong>
         </div>
       ))}
     </div>
+  );
+};
+
+const BusyOverlay = ({ mode, uploadStatus }) => {
+  const label = uploadStatus || (mode === 'chat' ? 'Đang truy vấn Knowledge Base...' : 'Đang tạo nội dung học tập...');
+  const sub = uploadStatus
+    ? 'Tệp đang được gửi lên backend, lưu S3 và yêu cầu sync vào Knowledge Base.'
+    : 'StudyBot đang đọc context, gọi model và chuẩn bị kết quả để hiển thị.';
+
+  return (
+    <motion.div
+      className="busy-overlay"
+      initial={{ opacity: 0, y: 12 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={{ opacity: 0, y: 12 }}
+    >
+      <div className="busy-card">
+        <span className="busy-orb" />
+        <div>
+          <strong>{label}</strong>
+          <p>{sub}</p>
+        </div>
+      </div>
+    </motion.div>
   );
 };
 
@@ -177,10 +205,7 @@ const ChatView = ({ selectedDoc }) => {
       const response = await callApi('/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          question,
-          doc_id: selectedDoc?.doc_id || null,
-        }),
+        body: JSON.stringify({ question, doc_id: selectedDoc?.doc_id || null }),
       });
       setMessages((prev) => [...prev, {
         role: 'bot',
@@ -198,7 +223,7 @@ const ChatView = ({ selectedDoc }) => {
   const generateTool = async (tool) => {
     if (isBusy) return;
     if (!selectedDoc?.doc_id) {
-      showToast('Chọn một tài liệu ở sidebar trước đã.', 'error');
+      showToast('Chọn một tài liệu trước đã.', 'error');
       return;
     }
 
@@ -268,7 +293,12 @@ const ChatView = ({ selectedDoc }) => {
               </div>
             </div>
           ) : messages.map((msg, index) => (
-            <article key={`${msg.role}-${index}`} className={`message ${msg.role}`}>
+            <motion.article
+              key={`${msg.role}-${index}`}
+              className={`message ${msg.role}`}
+              initial={{ opacity: 0, y: 8 }}
+              animate={{ opacity: 1, y: 0 }}
+            >
               <div className="avatar">{msg.role === 'user' ? 'U' : <Sparkles size={18} color="white" />}</div>
               <div className="bubble">
                 {msg.role === 'user' ? msg.content : msg.error ? (
@@ -280,7 +310,7 @@ const ChatView = ({ selectedDoc }) => {
                   </>
                 )}
               </div>
-            </article>
+            </motion.article>
           ))}
           {loadingMode === 'chat' && (
             <article className="message bot">
@@ -298,7 +328,7 @@ const ChatView = ({ selectedDoc }) => {
         <div className="tool-loading">
           <span className="big-spinner" />
           <h3>{actionCopy[mode].loading}</h3>
-          <p>StudyBot đang tạo dữ liệu học tập có cấu trúc JSON để hiển thị thành trải nghiệm tương tác.</p>
+          <p>StudyBot đang tạo dữ liệu học tập có cấu trúc để hiển thị thành trải nghiệm tương tác.</p>
         </div>
       );
     }
@@ -366,14 +396,22 @@ const ChatView = ({ selectedDoc }) => {
 
   return (
     <section className="learn-workspace">
-      {toast && (
-        <div className="toasts">
-          <div className={`toast ${toast.type}`}>
-            {toast.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
-            <span>{toast.msg}</span>
-          </div>
-        </div>
-      )}
+      <AnimatePresence>
+        {toast && (
+          <motion.div className="toasts" initial={{ opacity: 0, x: 24 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 24 }}>
+            <div className={`toast ${toast.type}`}>
+              {toast.type === 'success' ? <CheckCircle2 size={18} /> : <AlertCircle size={18} />}
+              <span>{toast.msg}</span>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <AnimatePresence>
+        {(isBusy || uploadStatus.startsWith('Đang upload')) && (
+          <BusyOverlay mode={loadingMode} uploadStatus={uploadStatus.startsWith('Đang upload') ? uploadStatus : ''} />
+        )}
+      </AnimatePresence>
 
       <div className="study-command">
         <div className="study-command-main">
@@ -402,7 +440,12 @@ const ChatView = ({ selectedDoc }) => {
       <div className="workspace-grid">
         <div className="upload-panel">
           <input ref={fileInputRef} type="file" id="file-upload" onChange={handleUpload} accept=".pdf,.txt,.md,.csv,.doc,.docx" hidden />
-          <button className="upload-card wide" type="button" onClick={() => fileInputRef.current?.click()}>
+          <button
+            className="upload-card wide"
+            type="button"
+            onClick={() => fileInputRef.current?.click()}
+            disabled={uploadStatus.startsWith('Đang upload')}
+          >
             <UploadCloud size={20} />
             <span>
               <strong>Tải tài liệu mới</strong>

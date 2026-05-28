@@ -4,6 +4,9 @@ import { getCurrentUser } from 'aws-amplify/auth';
 import Login from './pages/Login';
 import Register from './pages/Register';
 import ChatView from './pages/ChatView';
+import Dashboard from './pages/Dashboard';
+import Documents from './pages/Documents';
+import Insights from './pages/Insights';
 import Layout from './components/Layout';
 import './index.css';
 
@@ -35,6 +38,7 @@ const AuthGuard = ({ children }) => {
 
 function App() {
   const [selectedDoc, setSelectedDoc] = useState(null);
+  const [activeView, setActiveView] = useState('dashboard');
 
   useEffect(() => {
     const savedTheme = localStorage.getItem('theme') || (window.matchMedia('(prefers-color-scheme: light)').matches ? 'light' : 'dark');
@@ -48,8 +52,42 @@ function App() {
         <Route path="/register" element={<Register />} />
         <Route path="/" element={
           <AuthGuard>
-            <Layout selectedDoc={selectedDoc} setSelectedDoc={setSelectedDoc}>
-              <ChatView selectedDoc={selectedDoc} />
+            <Layout
+              selectedDoc={selectedDoc}
+              setSelectedDoc={setSelectedDoc}
+              activeView={activeView}
+              setActiveView={setActiveView}
+            >
+              {({ docs, recent, health, refreshWorkspace, isLoading }) => {
+                if (activeView === 'dashboard') {
+                  return (
+                    <Dashboard
+                      docs={docs}
+                      recent={recent}
+                      health={health}
+                      selectedDoc={selectedDoc}
+                      setSelectedDoc={setSelectedDoc}
+                      setActiveView={setActiveView}
+                    />
+                  );
+                }
+                if (activeView === 'documents') {
+                  return (
+                    <Documents
+                      docs={docs}
+                      selectedDoc={selectedDoc}
+                      setSelectedDoc={setSelectedDoc}
+                      setActiveView={setActiveView}
+                      refreshWorkspace={refreshWorkspace}
+                      isLoading={isLoading}
+                    />
+                  );
+                }
+                if (activeView === 'insights') {
+                  return <Insights docs={docs} recent={recent} health={health} />;
+                }
+                return <ChatView selectedDoc={selectedDoc} />;
+              }}
             </Layout>
           </AuthGuard>
         } />
