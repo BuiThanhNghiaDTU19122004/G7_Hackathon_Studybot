@@ -33,11 +33,18 @@
   perspective: 1000px;
   width: 100%;
   height: 280px;
+  display: block;
+  padding: 0;
+  border: 0;
+  background: transparent;
   cursor: pointer;
   margin-bottom: 1.5rem;
+  color: inherit;
+  font: inherit;
 }
 
 .flashcard {
+  display: block;
   width: 100%;
   height: 100%;
   position: relative;
@@ -51,8 +58,10 @@
 
 .flashcard-face {
   position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
+  box-sizing: border-box;
   -webkit-backface-visibility: hidden;
   backface-visibility: hidden;
   border-radius: 1.5rem;
