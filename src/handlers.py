@@ -1,7 +1,10 @@
-"""Endpoint handlers. Pure business logic — knows nothing about FastAPI or AWS specifics."""
+"""Endpoint handlers. Pure business logic; knows nothing about FastAPI or AWS specifics."""
 import io
+import json
+import re
 import uuid
-from typing import Optional
+
+from src.config import config
 
 
 PROMPT_TEMPLATE = """You are a study assistant. Answer the student's question using ONLY the
@@ -17,23 +20,32 @@ QUESTION: {question}
 ANSWER:"""
 
 
+
 def _context_from_chunks(chunks: list[dict]) -> str:
-    return "\n\n".join(f"[chunk {i+1}] {c['text']}" for i, c in enumerate(chunks))
+    return "\n\n".join(f"[chunk {i + 1}] {c['text']}" for i, c in enumerate(chunks))
 
 
 def _citations_from_chunks(chunks: list[dict]) -> list[dict]:
-    return [
-        {"chunk": i + 1, "doc_id": c["doc_id"], "score": c["score"], "text": c["text"][:260]}
-        for i, c in enumerate(chunks)
-    ]
+    citations = []
+    seen = set()
+    for i, chunk in enumerate(chunks):
+        metadata = chunk.get("metadata", {}) or {}
+        filename = metadata.get("filename") or chunk.get("filename") or "Uploaded document"
+        doc_id = metadata.get("doc_id") or chunk.get("doc_id", "")
+        key = (filename, doc_id)
+        if key in seen:
+            continue
+        seen.add(key)
+        citations.append({
+            "chunk": i + 1,
+            "doc_id": doc_id,
+            "filename": filename,
+            "score": chunk.get("score"),
+        })
+    return citations
 
 
 def _fallback_local_chunks(user_id: str, vector_store, top_k: int = 8, doc_id: str | None = None) -> list[dict]:
-    """Return recent local chunks when a task prompt has no keyword match.
-    The production Bedrock KB path does semantic retrieval. LocalVector is only a
-    keyword stub, so generic actions like "summarize this lecture" need a small
-    fallback to keep the local demo useful.
-    """
     docs = getattr(vector_store, "docs", None)
     if not docs:
         return []
@@ -59,13 +71,7 @@ def _metadata_filter(user_id: str, doc_id: str | None = None) -> dict:
     return metadata
 
 
-def _retrieve_context(
-    user_id: str,
-    query: str,
-    vector_store,
-    top_k: int = 8,
-    doc_id: str | None = None,
-) -> tuple[str, list[dict]]:
+def _retrieve_context(user_id: str, query: str, vector_store, top_k: int = 8, doc_id: str | None = None) -> tuple[str, list[dict]]:
     chunks = vector_store.search(query, top_k=top_k, filter=_metadata_filter(user_id, doc_id))
     if not chunks:
         chunks = _fallback_local_chunks(user_id, vector_store, top_k=top_k, doc_id=doc_id)
@@ -73,39 +79,113 @@ def _retrieve_context(
 
 
 def _extract_text(filename: str, data: bytes) -> str:
-    """Extract plain text from PDF or .txt upload."""
     name = filename.lower()
     if name.endswith(".pdf"):
         try:
             from pypdf import PdfReader
         except ImportError:
-            return "(pypdf not installed — install requirements.txt)"
+            return "(pypdf not installed; install requirements.txt)"
         reader = PdfReader(io.BytesIO(data))
         return "\n\n".join(page.extract_text() or "" for page in reader.pages)
-    # Default: assume UTF-8 text
     try:
         return data.decode("utf-8", errors="replace")
     except Exception:
         return ""
 
 
-def handle_upload(
-    user_id: str,
-    filename: str,
-    data: bytes,
-    storage,
-    userstore,
-    vector_store,
-) -> dict:
-    """Store the file, extract text, ingest into vector store, record in userstore."""
+def _build_storage_key(*parts: str) -> str:
+    return "/".join(str(part).strip("/") for part in parts if part)
+
+
+def _original_file_key(user_id: str, doc_id: str, filename: str, use_kb_prefix: bool) -> str:
+    prefix = config.storage_key_prefix if use_kb_prefix else "uploads"
+    return _build_storage_key(prefix, user_id, doc_id, filename)
+
+
+def _extract_json_object(text: str) -> dict | None:
+    cleaned = (text or "").strip()
+    cleaned = re.sub(r"^```(?:json)?\s*", "", cleaned, flags=re.IGNORECASE)
+    cleaned = re.sub(r"\s*```$", "", cleaned)
+    try:
+        return json.loads(cleaned)
+    except json.JSONDecodeError:
+        pass
+
+    start = cleaned.find("{")
+    end = cleaned.rfind("}")
+    if start >= 0 and end > start:
+        try:
+            return json.loads(cleaned[start:end + 1])
+        except json.JSONDecodeError:
+            return None
+    return None
+
+
+def _normalize_flashcard_payload(text: str, count: int) -> dict:
+    parsed = _extract_json_object(text)
+    if parsed and isinstance(parsed.get("cards"), list):
+        cards = []
+        for card in parsed["cards"]:
+            if not isinstance(card, dict):
+                continue
+            front = str(card.get("front") or card.get("term") or "").strip()
+            back = str(card.get("back") or card.get("definition") or "").strip()
+            if front and back:
+                cards.append({"front": front, "back": back})
+        return {"cards": cards[:count]}
+
+    cards = []
+    pair_re = re.compile(r"Front:\s*(.*?)\s*Back:\s*(.*?)(?=\n\s*Front:|\Z)", re.IGNORECASE | re.DOTALL)
+    for match in pair_re.finditer(text or ""):
+        cards.append({"front": match.group(1).strip(), "back": match.group(2).strip()})
+    return {"cards": cards[:count]}
+
+
+def _normalize_quiz_payload(text: str, count: int) -> dict:
+    parsed = _extract_json_object(text)
+    if parsed and isinstance(parsed.get("questions"), list):
+        questions = []
+        for item in parsed["questions"]:
+            if not isinstance(item, dict):
+                continue
+            raw_options = item.get("options") or []
+            if isinstance(raw_options, dict):
+                raw_options = [{"id": key, "text": value} for key, value in raw_options.items()]
+            options = []
+            for idx, option in enumerate(raw_options):
+                if isinstance(option, dict):
+                    text = str(option.get("text") or option.get("label") or "").strip()
+                    if text:
+                        options.append({
+                            "id": str(option.get("id") or option.get("letter") or chr(65 + idx)).upper(),
+                            "text": text,
+                        })
+            answer = str(item.get("answer") or item.get("correctAnswer") or "").upper().strip()
+            question = str(item.get("question") or item.get("questionText") or "").strip()
+            if question and len(options) >= 2 and answer:
+                questions.append({
+                    "question": question,
+                    "options": options[:4],
+                    "answer": answer,
+                    "explanation": str(item.get("explanation") or "").strip(),
+                })
+        return {"questions": questions[:count]}
+    return {"questions": []}
+
+
+def handle_upload(user_id: str, filename: str, data: bytes, storage, userstore, vector_store) -> dict:
     doc_id = str(uuid.uuid4())
-    key = f"{user_id}/{doc_id}/{filename}"
+    use_kb_prefix = config.vector_backend == "bedrock_kb"
+    key = _original_file_key(user_id, doc_id, filename, use_kb_prefix=use_kb_prefix)
     location = storage.put(key, data)
     text = _extract_text(filename, data)
     kb_metadata = {"user_id": user_id, "doc_id": doc_id, "filename": filename}
-    if hasattr(storage, "put_metadata"):
+    kb_key = key
+    kb_text_location = ""
+    kb_sync_ready = config.vector_backend == "bedrock_kb"
+    if hasattr(storage, "put_metadata") and kb_sync_ready:
         storage.put_metadata(key, kb_metadata)
-    if text.strip():
+    if (config.vector_backend == "bedrock_kb" and kb_sync_ready) or text.strip():
         vector_store.ingest(doc_id=doc_id, text=text, metadata=kb_metadata)
     userstore.add_doc(
         user_id=user_id,
@@ -118,30 +198,32 @@ def handle_upload(
         "size": len(data),
         "chars_extracted": len(text),
         "location": location,
+        "s3_key": key,
+        "kb_s3_key": kb_key if config.vector_backend == "bedrock_kb" and kb_sync_ready else "",
+        "kb_text_location": kb_text_location,
+        "kb_sync_requested": config.vector_backend == "bedrock_kb" and kb_sync_ready,
+        "kb_warning": "",
     }
 
 
-def handle_query(
-    user_id: str,
-    question: str,
-    ai_client,
-    userstore,
-    vector_store,
-    vector_backend: str,
-    bedrock_kb_id: str,
-) -> dict:
-    """RAG flow: retrieve user's relevant chunks → call AI with context → log + return."""
+def handle_query(user_id: str, question: str, ai_client, userstore, vector_store, vector_backend: str, bedrock_kb_id: str) -> dict:
     if vector_backend == "bedrock_kb":
-        # Production path: let Bedrock do retrieve + generate in one call
+        rag_question = (
+            "Tra loi bang tieng Viet, than thien va ngan gon. "
+            "Chi dua tren tai lieu da truy xuat. "
+            "Neu tai lieu khong co thong tin phu hop, hay noi: "
+            "'Mình chưa thấy thông tin này trong tài liệu bạn đã tải lên. "
+            "Bạn có thể tải thêm tài liệu liên quan hoặc hỏi theo cách cụ thể hơn nhé.' "
+            f"\n\nCau hoi: {question}"
+        )
         result = ai_client.retrieve_and_generate(
-            query=question,
+            query=rag_question,
             kb_id=bedrock_kb_id,
             filter={"user_id": user_id},
         )
         answer = result["answer"]
         citations = result["citations"]
     else:
-        # Local path: do our own retrieve then prompt
         chunks = vector_store.search(question, top_k=5, filter={"user_id": user_id})
         if not chunks:
             answer = "No relevant content found in your uploaded documents. Upload some first."
@@ -156,26 +238,14 @@ def handle_query(
     return {"question": question, "answer": answer, "citations": citations}
 
 
-def handle_summarize(
-    user_id: str,
-    ai_client,
-    userstore,
-    vector_store,
-    vector_backend: str,
-    bedrock_kb_id: str,
-    doc_id: str | None = None,
-) -> dict:
+def handle_summarize(user_id: str, ai_client, userstore, vector_store, vector_backend: str, bedrock_kb_id: str, doc_id: str | None = None) -> dict:
     task = (
-        "Summarize ONLY the selected uploaded document. Write in Vietnamese. "
-        "Use these Markdown sections exactly: ## 5 ý chính, ## Thuật ngữ cần nhớ, "
-        "## Điểm dễ ra kiểm tra, ## Gợi ý ôn tập. Be concise and grounded in the document."
+        "Read only the selected document and write a Vietnamese study summary. "
+        "Return Markdown with these headings: ## 5 y chinh, ## Thuat ngu can nho, "
+        "## Diem de ra kiem tra, ## Goi y on tap. Do not refuse; if context is thin, summarize what is available."
     )
     if vector_backend == "bedrock_kb":
-        result = ai_client.retrieve_and_generate(
-            query=task,
-            kb_id=bedrock_kb_id,
-            filter=_metadata_filter(user_id, doc_id),
-        )
+        result = ai_client.retrieve_and_generate(query=task, kb_id=bedrock_kb_id, filter=_metadata_filter(user_id, doc_id))
         summary = result["answer"]
         citations = result["citations"]
     else:
@@ -184,17 +254,7 @@ def handle_summarize(
             summary = "No uploaded study material found. Upload a lecture first."
             citations = []
         else:
-            prompt = f"""You are StudyBot. Use ONLY the lecture context below.
-
-CONTEXT:
-{context}
-
-Create a concise study summary with these headings:
-- Key ideas
-- Terms to remember
-- Likely exam points
-
-SUMMARY:"""
+            prompt = f"Use only this context and create a Vietnamese study summary.\n\nCONTEXT:\n{context}\n\nSUMMARY:"
             summary = ai_client.invoke(prompt, max_tokens=700)
     userstore.log_query(user_id=user_id, query="Generate study summary", answer=summary)
     return {"summary": summary, "citations": citations}
@@ -214,47 +274,25 @@ def handle_quiz(
     count = max(3, min(count, 10))
     difficulty = difficulty if difficulty in {"easy", "medium", "hard"} else "medium"
     task = (
-        f"Generate exactly {count} {difficulty} multiple-choice quiz questions from ONLY the selected uploaded document. "
-        "Write in Vietnamese. Use this exact plain-text format for every question:\n"
-        "Câu 1: [question]\n"
-        "A. [option]\n"
-        "B. [option]\n"
-        "C. [option]\n"
-        "D. [option]\n"
-        "Đáp án đúng: [A/B/C/D]\n"
-        "Giải thích: [one sentence]\n"
-        "Do not add extra formats outside the questions."
+        f"Create exactly {count} Vietnamese multiple-choice questions from the selected document. "
+        "Return ONLY valid JSON. Do not use Markdown. Do not wrap in code fences. "
+        'Schema: {"questions":[{"question":"...","options":[{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."},{"id":"D","text":"..."}],"answer":"A","explanation":"..."}]}. '
+        "Use facts from the document. If context is thin, create questions from the available text."
     )
     if vector_backend == "bedrock_kb":
-        result = ai_client.retrieve_and_generate(
-            query=task,
-            kb_id=bedrock_kb_id,
-            filter=_metadata_filter(user_id, doc_id),
-        )
-        quiz = result["answer"]
+        result = ai_client.retrieve_and_generate(query=task, kb_id=bedrock_kb_id, filter=_metadata_filter(user_id, doc_id))
+        raw = result["answer"]
         citations = result["citations"]
     else:
         context, citations = _retrieve_context(user_id, task, vector_store, top_k=10, doc_id=doc_id)
         if not context:
-            quiz = "No uploaded study material found. Upload a lecture first."
+            raw = '{"questions":[]}'
             citations = []
         else:
-            prompt = f"""You are StudyBot. Use ONLY the lecture context below.
-
-CONTEXT:
-{context}
-
-Generate {count} {difficulty} multiple-choice quiz questions.
-For each question include:
-- Question
-- A, B, C, D options
-- Correct answer
-- One-sentence explanation grounded in the notes
-
-QUIZ:"""
-            quiz = ai_client.invoke(prompt, max_tokens=900)
-    userstore.log_query(user_id=user_id, query=f"Generate {difficulty} quiz", answer=quiz)
-    return {"quiz": quiz, "difficulty": difficulty, "count": count, "citations": citations}
+            raw = ai_client.invoke(f"CONTEXT:\n{context}\n\n{task}", max_tokens=1100)
+    payload = _normalize_quiz_payload(raw, count)
+    userstore.log_query(user_id=user_id, query=f"Generate {difficulty} quiz", answer=json.dumps(payload, ensure_ascii=False))
+    return {"quiz": json.dumps(payload, ensure_ascii=False), "quiz_json": payload, "difficulty": difficulty, "count": count, "citations": citations}
 
 
 def handle_flashcards(
@@ -269,39 +307,25 @@ def handle_flashcards(
 ) -> dict:
     count = max(5, min(count, 20))
     task = (
-        f"Generate exactly {count} flashcards from ONLY the selected uploaded document. "
-        "Write in Vietnamese. Use this exact plain-text format for every card:\n"
-        "Front: [term or question]\n"
-        "Back: [short answer]\n"
-        "Do not add bullets, tables, or explanations outside Front/Back pairs."
+        f"Create exactly {count} Vietnamese flashcards from the selected document. "
+        "Return ONLY valid JSON. Do not use Markdown. Do not wrap in code fences. "
+        'Schema: {"cards":[{"front":"...","back":"..."}]}. '
+        "Use concise front/back text grounded in the document. If context is thin, use what is available."
     )
     if vector_backend == "bedrock_kb":
-        result = ai_client.retrieve_and_generate(
-            query=task,
-            kb_id=bedrock_kb_id,
-            filter=_metadata_filter(user_id, doc_id),
-        )
-        flashcards = result["answer"]
+        result = ai_client.retrieve_and_generate(query=task, kb_id=bedrock_kb_id, filter=_metadata_filter(user_id, doc_id))
+        raw = result["answer"]
         citations = result["citations"]
     else:
         context, citations = _retrieve_context(user_id, task, vector_store, top_k=10, doc_id=doc_id)
         if not context:
-            flashcards = "No uploaded study material found. Upload a lecture first."
+            raw = '{"cards":[]}'
             citations = []
         else:
-            prompt = f"""You are StudyBot. Use ONLY the lecture context below.
-
-CONTEXT:
-{context}
-
-Create {count} flashcards in this format:
-Front: [term or question]
-Back: [short answer]
-
-FLASHCARDS:"""
-            flashcards = ai_client.invoke(prompt, max_tokens=800)
-    userstore.log_query(user_id=user_id, query="Generate flashcards", answer=flashcards)
-    return {"flashcards": flashcards, "count": count, "citations": citations}
+            raw = ai_client.invoke(f"CONTEXT:\n{context}\n\n{task}", max_tokens=900)
+    payload = _normalize_flashcard_payload(raw, count)
+    userstore.log_query(user_id=user_id, query="Generate flashcards", answer=json.dumps(payload, ensure_ascii=False))
+    return {"flashcards": json.dumps(payload, ensure_ascii=False), "flashcards_json": payload, "count": count, "citations": citations}
 
 
 def handle_study_plan(user_id: str, userstore) -> dict:

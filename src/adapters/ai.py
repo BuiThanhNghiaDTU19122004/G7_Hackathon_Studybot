@@ -5,6 +5,7 @@ Interface:
     retrieve_and_generate(query, kb_id="", filter=None) -> dict with {"answer": str, "citations": list}
 """
 from typing import Any
+from urllib.parse import unquote
 
 
 def _bedrock_filter(metadata_filter: dict) -> dict:
@@ -15,6 +16,38 @@ def _bedrock_filter(metadata_filter: dict) -> dict:
     if len(conditions) == 1:
         return conditions[0]
     return {"andAll": conditions}
+
+
+def _filename_from_uri(uri: str) -> str:
+    if not uri:
+        return "Uploaded document"
+    name = uri.rstrip("/").split("/")[-1]
+    if name.endswith(".metadata.json"):
+        name = name[:-14]
+    return unquote(name) or "Uploaded document"
+
+
+def _citations_from_response(resp: dict) -> list[dict]:
+    citations = []
+    seen = set()
+    for citation in resp.get("citations", []):
+        for ref in citation.get("retrievedReferences", []):
+            location = ref.get("location", {})
+            metadata = ref.get("metadata", {}) or {}
+            s3_uri = location.get("s3Location", {}).get("uri", "")
+            filename = metadata.get("filename") or _filename_from_uri(s3_uri)
+            doc_id = metadata.get("doc_id") or ""
+            key = (filename, doc_id, s3_uri)
+            if key in seen:
+                continue
+            seen.add(key)
+            citations.append({
+                "filename": filename,
+                "doc_id": doc_id,
+                "uri": s3_uri,
+                "source": location,
+            })
+    return citations
 
 
 class BedrockAI:
@@ -60,14 +93,7 @@ class BedrockAI:
         )
         return {
             "answer": resp["output"]["text"],
-            "citations": [
-                {
-                    "text": ref.get("content", {}).get("text", ""),
-                    "source": ref.get("location", {}),
-                }
-                for citation in resp.get("citations", [])
-                for ref in citation.get("retrievedReferences", [])
-            ],
+            "citations": _citations_from_response(resp),
         }
 
 

@@ -240,6 +240,7 @@ def document_action(
         return {
             "question": "Generate flashcards",
             "answer": result["flashcards"],
+            "flashcards_json": result.get("flashcards_json"),
             "citations": result.get("citations", []),
         }
 
@@ -258,6 +259,7 @@ def document_action(
         return {
             "question": f"Generate {result['difficulty']} quiz",
             "answer": result["quiz"],
+            "quiz_json": result.get("quiz_json"),
             "citations": result.get("citations", []),
         }
 

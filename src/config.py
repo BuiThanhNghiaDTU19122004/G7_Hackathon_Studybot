@@ -33,6 +33,7 @@ class Config:
     # Storage
     storage_backend: str = _env("STORAGE_BACKEND", "local")
     storage_bucket: str = _env("STORAGE_BUCKET", "")
+    storage_key_prefix: str = _env("STORAGE_KEY_PREFIX", "").strip("/")
     storage_local_dir: str = _env("STORAGE_LOCAL_DIR", _lambda_default("./_data/uploads", "/tmp/studybot/uploads"))
 
     # UserStore

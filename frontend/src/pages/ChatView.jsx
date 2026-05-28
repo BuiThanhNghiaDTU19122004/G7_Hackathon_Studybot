@@ -1,4 +1,4 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react';
+import React, { useEffect, useRef, useState } from 'react';
 import {
   AlertCircle,
   BookOpen,
@@ -41,7 +41,7 @@ const MODES = {
   quiz: {
     label: 'Trắc nghiệm',
     title: 'Bài luyện tập',
-    description: 'Làm bài trắc nghiệm, chọn đáp án và chấm điểm ngay.',
+    description: 'Chọn đáp án, chấm điểm và xem giải thích như một mini game.',
     icon: FileQuestion,
   },
 };
@@ -64,64 +64,22 @@ const actionCopy = {
   },
 };
 
-const stripMarkdown = (text = '') => text.replace(/\*\*/g, '').replace(/\r/g, '');
-
-const parseFlashcards = (text = '') => {
-  const normalized = stripMarkdown(text);
-  const cards = [];
-  const pairRegex = /(?:Front|Mặt trước|Câu hỏi|Thuật ngữ|Khái niệm)\s*:\s*([\s\S]*?)(?:\n|$)(?:Back|Mặt sau|Trả lời|Đáp án|Định nghĩa)\s*:\s*([\s\S]*?)(?=\n\s*(?:\d+[\).]|[-*])?\s*(?:Front|Mặt trước|Câu hỏi|Thuật ngữ|Khái niệm)\s*:|$)/gi;
-
-  for (const match of normalized.matchAll(pairRegex)) {
-    const term = match[1].replace(/^[-*\d.)\s]+/, '').trim();
-    const definition = match[2].replace(/^[-*\d.)\s]+/, '').trim();
-    if (term && definition) cards.push({ term, definition });
-  }
-
-  if (cards.length) return cards;
-
-  const blocks = normalized.split(/\n\s*(?=\d+[\).]\s|\-\s)/).filter(Boolean);
-  for (const block of blocks) {
-    const lines = block.split('\n').map((line) => line.replace(/^[-*\d.)\s]+/, '').trim()).filter(Boolean);
-    if (lines.length >= 2) cards.push({ term: lines[0], definition: lines.slice(1).join(' ') });
-  }
-
-  return cards.length ? cards : null;
-};
-
-const parseQuiz = (text = '') => {
-  const normalized = stripMarkdown(text);
-  const blocks = normalized.split(/\n\s*(?=(?:Câu|Question)\s*\d+|\d+[\).]\s)/i).filter(Boolean);
-  const questions = [];
-
-  for (const block of blocks) {
-    const lines = block.split('\n').map((line) => line.trim()).filter(Boolean);
-    if (!lines.length) continue;
-
-    const questionText = lines[0].replace(/^(?:Câu|Question)?\s*\d+[\).:]?\s*/i, '').trim();
-    const options = [];
-    let correctAnswer = null;
-    let explanation = '';
-
-    for (const line of lines.slice(1)) {
-      const option = line.match(/^[-*]?\s*([A-D])[\).]\s*(.+)/i);
-      if (option) {
-        options.push({ letter: option[1].toUpperCase(), text: option[2].trim() });
-        continue;
+const parseJson = (text) => {
+  if (!text) return null;
+  try {
+    return JSON.parse(text);
+  } catch {
+    const start = text.indexOf('{');
+    const end = text.lastIndexOf('}');
+    if (start >= 0 && end > start) {
+      try {
+        return JSON.parse(text.slice(start, end + 1));
+      } catch {
+        return null;
       }
-
-      const answer = line.match(/(?:correct answer|đáp án đúng|dap an dung|answer)\s*:?\s*([A-D])/i);
-      if (answer) correctAnswer = answer[1].toUpperCase();
-
-      const explain = line.match(/(?:giải thích|giai thich|explanation)\s*:?\s*(.+)/i);
-      if (explain) explanation = explain[1].trim();
-    }
-
-    if (questionText && options.length >= 2 && correctAnswer) {
-      questions.push({ questionText, options, correctAnswer, explanation });
     }
   }
-
-  return questions.length ? questions : null;
+  return null;
 };
 
 const citationTitle = (citation) => {
@@ -130,8 +88,6 @@ const citationTitle = (citation) => {
   const s3 = citation.source?.s3Location?.uri || citation.source?.uri || '';
   return s3.split('/').pop() || 'Tài liệu';
 };
-
-const citationText = (citation) => citation.text || citation.content || '';
 
 const MarkdownBlock = ({ text }) => (
   <div
@@ -148,7 +104,6 @@ const Citations = ({ citations = [] }) => {
       {citations.map((citation, index) => (
         <div key={`${citationTitle(citation)}-${index}`} className="citation">
           <strong>{citationTitle(citation)}</strong>
-          <div>{citationText(citation)}</div>
         </div>
       ))}
     </div>
@@ -159,11 +114,7 @@ const ChatView = ({ selectedDoc }) => {
   const [mode, setMode] = useState('chat');
   const [messages, setMessages] = useState([]);
   const [input, setInput] = useState('');
-  const [workspace, setWorkspace] = useState({
-    summary: null,
-    flashcard: null,
-    quiz: null,
-  });
+  const [workspace, setWorkspace] = useState({ summary: null, flashcard: null, quiz: null });
   const [loadingMode, setLoadingMode] = useState('');
   const [uploadStatus, setUploadStatus] = useState('');
   const [toast, setToast] = useState(null);
@@ -172,7 +123,6 @@ const ChatView = ({ selectedDoc }) => {
 
   const selectedDocName = selectedDoc?.filename || selectedDoc?.doc_id || 'Chưa chọn tài liệu';
   const isBusy = Boolean(loadingMode);
-
   const activeMode = MODES[mode];
   const ActiveIcon = activeMode.icon;
 
@@ -191,9 +141,7 @@ const ChatView = ({ selectedDoc }) => {
       setMode('chat');
       setMessages([]);
       setInput('');
-      setUploadStatus('');
     };
-
     const handleLoadHistory = (event) => {
       const history = JSON.parse(localStorage.getItem('studybot_history') || '[]');
       const question = history[event.detail];
@@ -202,7 +150,6 @@ const ChatView = ({ selectedDoc }) => {
         setInput(question);
       }
     };
-
     window.addEventListener('new-chat', handleNewChat);
     window.addEventListener('load-history', handleLoadHistory);
     return () => {
@@ -221,7 +168,6 @@ const ChatView = ({ selectedDoc }) => {
   const sendQuestion = async () => {
     const question = input.trim();
     if (!question || isBusy) return;
-
     setMessages((prev) => [...prev, { role: 'user', content: question }]);
     setInput('');
     setLoadingMode('chat');
@@ -233,21 +179,14 @@ const ChatView = ({ selectedDoc }) => {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ question }),
       });
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          role: 'bot',
-          content: response.answer || 'Không có câu trả lời.',
-          citations: response.citations || [],
-        },
-      ]);
+      setMessages((prev) => [...prev, {
+        role: 'bot',
+        content: response.answer || 'Không có câu trả lời.',
+        citations: response.citations || [],
+      }]);
     } catch (err) {
       showToast('Không gọi được /query', 'error');
-      setMessages((prev) => [
-        ...prev,
-        { role: 'bot', error: true, content: err.message || 'Backend đang lỗi.' },
-      ]);
+      setMessages((prev) => [...prev, { role: 'bot', error: true, content: err.message || 'Backend đang lỗi.' }]);
     } finally {
       setLoadingMode('');
     }
@@ -262,13 +201,14 @@ const ChatView = ({ selectedDoc }) => {
 
     setMode(tool);
     setLoadingMode(tool);
-
     try {
       const response = await callDocumentAction(tool, selectedDoc.doc_id);
+      const jsonPayload = response[`${tool}s_json`] || response[`${tool}_json`] || parseJson(response.answer);
       setWorkspace((prev) => ({
         ...prev,
         [tool]: {
           raw: response.answer || '',
+          data: jsonPayload,
           citations: response.citations || [],
           doc: selectedDoc,
           generatedAt: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
@@ -289,7 +229,6 @@ const ChatView = ({ selectedDoc }) => {
   const handleUpload = async (event) => {
     const file = event.target.files?.[0];
     if (!file) return;
-
     setUploadStatus(`Đang upload ${file.name}...`);
     try {
       const result = await uploadFile(file);
@@ -306,8 +245,6 @@ const ChatView = ({ selectedDoc }) => {
   };
 
   const toolState = workspace[mode];
-  const cards = useMemo(() => (toolState?.raw ? parseFlashcards(toolState.raw) : null), [toolState?.raw]);
-  const questions = useMemo(() => (toolState?.raw ? parseQuiz(toolState.raw) : null), [toolState?.raw]);
 
   const renderToolContent = () => {
     if (mode === 'chat') {
@@ -317,13 +254,9 @@ const ChatView = ({ selectedDoc }) => {
             <div className="study-empty">
               <div className="empty-icon"><GraduationCap size={34} /></div>
               <h3>Hỏi trực tiếp trên tài liệu của bạn</h3>
-              <p>Chọn tài liệu ở sidebar để các chức năng học tập bám đúng nội dung. Chat vẫn có thể hỏi tự do trên toàn bộ tài liệu của bạn.</p>
+              <p>Chọn tài liệu ở sidebar để flashcard và quiz bám đúng nội dung. Chat có thể hỏi tự do trên toàn bộ tài liệu của bạn.</p>
               <div className="prompt-grid">
-                {[
-                  'Tóm tắt tài liệu này thành 5 ý chính',
-                  'Giải thích CI/CD theo tài liệu của tôi',
-                  'Những phần nào dễ ra kiểm tra?',
-                ].map((prompt) => (
+                {['Tóm tắt tài liệu này thành 5 ý chính', 'Giải thích CI/CD theo tài liệu của tôi', 'Những phần nào dễ ra kiểm tra?'].map((prompt) => (
                   <button key={prompt} type="button" onClick={() => setInput(prompt)}>
                     <Lightbulb size={15} />
                     {prompt}
@@ -331,24 +264,21 @@ const ChatView = ({ selectedDoc }) => {
                 ))}
               </div>
             </div>
-          ) : (
-            messages.map((msg, index) => (
-              <article key={`${msg.role}-${index}`} className={`message ${msg.role}`}>
-                <div className="avatar">{msg.role === 'user' ? 'U' : <Sparkles size={18} color="white" />}</div>
-                <div className="bubble">
-                  {msg.role === 'user' ? msg.content : msg.error ? (
-                    <div className="error-answer"><AlertCircle size={16} /> <span>{msg.content}</span></div>
-                  ) : (
-                    <>
-                      <MarkdownBlock text={msg.content} />
-                      <Citations citations={msg.citations} />
-                    </>
-                  )}
-                </div>
-              </article>
-            ))
-          )}
-
+          ) : messages.map((msg, index) => (
+            <article key={`${msg.role}-${index}`} className={`message ${msg.role}`}>
+              <div className="avatar">{msg.role === 'user' ? 'U' : <Sparkles size={18} color="white" />}</div>
+              <div className="bubble">
+                {msg.role === 'user' ? msg.content : msg.error ? (
+                  <div className="error-answer"><AlertCircle size={16} /> <span>{msg.content}</span></div>
+                ) : (
+                  <>
+                    <MarkdownBlock text={msg.content} />
+                    <Citations citations={msg.citations} />
+                  </>
+                )}
+              </div>
+            </article>
+          ))}
           {loadingMode === 'chat' && (
             <article className="message bot">
               <div className="avatar"><Sparkles size={18} color="white" /></div>
@@ -365,7 +295,7 @@ const ChatView = ({ selectedDoc }) => {
         <div className="tool-loading">
           <span className="big-spinner" />
           <h3>{actionCopy[mode].loading}</h3>
-          <p>StudyBot đang đọc tài liệu đã chọn và dựng màn hình học tập cho bạn.</p>
+          <p>StudyBot đang tạo dữ liệu học tập có cấu trúc JSON để hiển thị thành trải nghiệm tương tác.</p>
         </div>
       );
     }
@@ -381,7 +311,7 @@ const ChatView = ({ selectedDoc }) => {
       );
     }
 
-    if (!toolState?.raw) {
+    if (!toolState?.raw && !toolState?.data) {
       return (
         <div className="tool-empty">
           <ActiveIcon size={34} />
@@ -409,18 +339,20 @@ const ChatView = ({ selectedDoc }) => {
     }
 
     if (mode === 'flashcard') {
+      const cards = toolState.data?.cards || [];
       return (
         <div className="tool-result">
-          {cards ? <FlashcardViewer cards={cards} /> : <MarkdownBlock text={toolState.raw} />}
+          {cards.length ? <FlashcardViewer cards={cards} /> : <MarkdownBlock text={toolState.raw} />}
           <Citations citations={toolState.citations} />
         </div>
       );
     }
 
     if (mode === 'quiz') {
+      const questions = toolState.data?.questions || [];
       return (
         <div className="tool-result">
-          {questions ? <QuizViewer questions={questions} /> : <MarkdownBlock text={toolState.raw} />}
+          {questions.length ? <QuizViewer questions={questions} /> : <MarkdownBlock text={toolState.raw} />}
           <Citations citations={toolState.citations} />
         </div>
       );
@@ -455,12 +387,7 @@ const ChatView = ({ selectedDoc }) => {
           {Object.entries(MODES).map(([key, item]) => {
             const Icon = item.icon;
             return (
-              <button
-                key={key}
-                className={`mode-tab ${mode === key ? 'active' : ''}`}
-                type="button"
-                onClick={() => setMode(key)}
-              >
+              <button key={key} className={`mode-tab ${mode === key ? 'active' : ''}`} type="button" onClick={() => setMode(key)}>
                 <Icon size={17} />
                 <span>{item.label}</span>
               </button>
@@ -471,14 +398,7 @@ const ChatView = ({ selectedDoc }) => {
 
       <div className="workspace-grid">
         <div className="upload-panel">
-          <input
-            ref={fileInputRef}
-            type="file"
-            id="file-upload"
-            onChange={handleUpload}
-            accept=".pdf,.txt,.md,.csv,.doc,.docx"
-            hidden
-          />
+          <input ref={fileInputRef} type="file" id="file-upload" onChange={handleUpload} accept=".pdf,.txt,.md,.csv,.doc,.docx" hidden />
           <button className="upload-card wide" type="button" onClick={() => fileInputRef.current?.click()}>
             <UploadCloud size={20} />
             <span>
@@ -502,9 +422,7 @@ const ChatView = ({ selectedDoc }) => {
         )}
       </div>
 
-      <div className={`workspace-stage mode-${mode}`}>
-        {renderToolContent()}
-      </div>
+      <div className={`workspace-stage mode-${mode}`}>{renderToolContent()}</div>
 
       {mode === 'chat' && (
         <div className="input-area">

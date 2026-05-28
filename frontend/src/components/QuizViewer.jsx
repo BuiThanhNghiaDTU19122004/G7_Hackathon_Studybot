@@ -1,37 +1,59 @@
-import React, { useState } from 'react';
-import { CheckCircle2, XCircle } from 'lucide-react';
+import React, { useMemo, useState } from 'react';
+import { CheckCircle2, RotateCcw, XCircle } from 'lucide-react';
 import './Quiz.css';
 
 const QuizViewer = ({ questions }) => {
   const [answers, setAnswers] = useState({});
   const [showResults, setShowResults] = useState(false);
 
-  if (!questions || questions.length === 0) return null;
+  const normalized = useMemo(() => (
+    (questions || []).map((question) => ({
+      questionText: question.questionText || question.question || '',
+      options: question.options || [],
+      correctAnswer: String(question.correctAnswer || question.answer || '').toUpperCase(),
+      explanation: question.explanation || '',
+    }))
+  ), [questions]);
 
-  const handleSelect = (qIndex, optionLetter) => {
+  if (!normalized.length) return null;
+
+  const handleSelect = (qIndex, optionId) => {
     if (showResults) return;
-    setAnswers((prev) => ({ ...prev, [qIndex]: optionLetter }));
+    setAnswers((prev) => ({ ...prev, [qIndex]: optionId }));
   };
 
-  const calculateScore = () => {
-    let score = 0;
-    questions.forEach((question, index) => {
-      if (answers[index] === question.correctAnswer) score += 1;
-    });
-    return score;
+  const reset = () => {
+    setAnswers({});
+    setShowResults(false);
   };
+
+  const score = normalized.reduce((total, question, index) => (
+    answers[index] === question.correctAnswer ? total + 1 : total
+  ), 0);
 
   return (
     <div className="quiz-container">
-      {questions.map((question, qIndex) => (
+      <div className="quiz-game-header">
+        <div>
+          <strong>Bài luyện tập</strong>
+          <span>{Object.keys(answers).length}/{normalized.length} câu đã chọn</span>
+        </div>
+        <button type="button" className="quiz-reset" onClick={reset}>
+          <RotateCcw size={16} />
+          Làm lại
+        </button>
+      </div>
+
+      {normalized.map((question, qIndex) => (
         <div key={qIndex} className="quiz-card">
           <div className="quiz-question">
             <strong>Câu {qIndex + 1}:</strong> {question.questionText}
           </div>
           <div className="quiz-options">
             {question.options.map((option, oIndex) => {
-              const isSelected = answers[qIndex] === option.letter;
-              const isCorrect = question.correctAnswer === option.letter;
+              const optionId = String(option.id || option.letter || String.fromCharCode(65 + oIndex)).toUpperCase();
+              const isSelected = answers[qIndex] === optionId;
+              const isCorrect = question.correctAnswer === optionId;
               let optionClass = 'quiz-option';
 
               if (isSelected) optionClass += ' selected';
@@ -42,12 +64,12 @@ const QuizViewer = ({ questions }) => {
 
               return (
                 <button
-                  key={oIndex}
+                  key={optionId}
                   type="button"
                   className={optionClass}
-                  onClick={() => handleSelect(qIndex, option.letter)}
+                  onClick={() => handleSelect(qIndex, optionId)}
                 >
-                  <span className="quiz-option-letter">{option.letter}</span>
+                  <span className="quiz-option-letter">{optionId}</span>
                   <span className="quiz-option-text">{option.text}</span>
                   {showResults && isCorrect && <CheckCircle2 size={18} className="quiz-icon-correct" />}
                   {showResults && isSelected && !isCorrect && <XCircle size={18} className="quiz-icon-incorrect" />}
@@ -68,13 +90,13 @@ const QuizViewer = ({ questions }) => {
           <button
             className="quiz-btn primary"
             onClick={() => setShowResults(true)}
-            disabled={Object.keys(answers).length !== questions.length}
+            disabled={Object.keys(answers).length !== normalized.length}
           >
-            Nộp bài
+            Chấm điểm
           </button>
         ) : (
           <div className="quiz-score-banner">
-            Kết quả của bạn: <strong>{calculateScore()} / {questions.length}</strong>
+            Kết quả của bạn: <strong>{score} / {normalized.length}</strong>
           </div>
         )}
       </div>
