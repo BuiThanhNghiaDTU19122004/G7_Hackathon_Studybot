@@ -196,4 +196,11 @@ if config.serve_frontend:
         """Convenience: serves frontend/dist/index.html at /. Set SERVE_FRONTEND=false
         if you deploy the frontend separately (CloudFront+S3, Amplify, ALB)."""
         # Note: Since we use HashRouter, all routes like /#/login load this index.html
-        return FileResponse(FRONTEND_DIR / "index.html")
+        return FileResponse(
+            FRONTEND_DIR / "index.html",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0"
+            }
+        )

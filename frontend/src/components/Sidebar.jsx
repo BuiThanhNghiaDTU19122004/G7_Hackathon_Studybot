@@ -49,14 +49,14 @@ const Sidebar = ({ isOpen, setIsOpen, docs }) => {
   return (
     <>
       <aside className={`sidebar ${isOpen ? 'open' : ''}`} id="sidebar">
-        <div className="sidebar-header">
+        <div className="sidebar-header" style={{ cursor: 'pointer' }} onClick={() => navigate('/')}>
           <div className="logo">
             <Sparkles color="white" size={20} />
           </div>
           <h1>StudyBot</h1>
         </div>
 
-        <button className="primary new-chat-btn" onClick={() => window.dispatchEvent(new Event('new-chat'))}>
+        <button className="primary new-chat-btn" onClick={() => { navigate('/'); setTimeout(() => window.dispatchEvent(new Event('new-chat')), 50); }}>
           <Plus size={18} />
           Chat Mới
         </button>
@@ -93,7 +93,7 @@ const Sidebar = ({ isOpen, setIsOpen, docs }) => {
               <div className="muted" style={{ textAlign: 'center', fontSize: '0.85rem', padding: '1rem 0' }}>Chưa có lịch sử</div>
             ) : (
               chatHistory.map((q, i) => (
-                <div key={i} className="history-item" onClick={() => window.dispatchEvent(new CustomEvent('load-history', { detail: i }))}>
+                <div key={i} className="history-item" onClick={() => { navigate('/'); setTimeout(() => window.dispatchEvent(new CustomEvent('load-history', { detail: i })), 50); }}>
                   <div className="history-item-text" style={{ flex: 1 }}>{q}</div>
                   <button className="history-item-delete" onClick={(e) => deleteHistoryItem(e, i)} title="Xóa">
                     <X size={14} />

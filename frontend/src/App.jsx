@@ -51,6 +51,7 @@ function App() {
             </Layout>
           </AuthGuard>
         } />
+        <Route path="/chat" element={<Navigate to="/" replace />} />
       </Routes>
     </HashRouter>
   );
