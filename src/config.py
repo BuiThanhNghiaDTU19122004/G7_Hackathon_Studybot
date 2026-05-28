@@ -26,7 +26,9 @@ class Config:
     # AI
     ai_backend: str = _env("AI_BACKEND", "local")
     ai_model_id: str = _env("AI_MODEL_ID", "anthropic.claude-3-5-haiku-20241022-v1:0")
-    aws_region: str = _env("AWS_REGION", "ap-southeast-1")
+    ai_model_arn: str = _env("AI_MODEL_ARN", "")
+    aws_region: str = _env("AWS_REGION", "us-east-1")
+    bedrock_region: str = _env("BEDROCK_REGION", _env("AWS_REGION", "us-east-1"))
 
     # Storage
     storage_backend: str = _env("STORAGE_BACKEND", "local")

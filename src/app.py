@@ -22,6 +22,8 @@ from src.adapters import factory
 from src import handlers
 
 
+APP_VERSION = "2026-05-28-filter-single-equals"
+
 app = FastAPI(title="StudyBot — W7 Capstone Starter")
 
 
@@ -91,6 +93,7 @@ class FlashcardRequest(BaseModel):
 def health() -> dict:
     return {
         "status": "ok",
+        "version": APP_VERSION,
         "backends": {
             "ai": config.ai_backend,
             "storage": config.storage_backend,

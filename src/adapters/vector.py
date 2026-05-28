@@ -9,6 +9,16 @@ from collections import Counter
 from typing import Optional
 
 
+def _bedrock_filter(metadata_filter: dict) -> dict:
+    conditions = [
+        {"equals": {"key": str(k), "value": str(v)}}
+        for k, v in metadata_filter.items()
+    ]
+    if len(conditions) == 1:
+        return conditions[0]
+    return {"andAll": conditions}
+
+
 class BedrockKBVector:
     """Production: Bedrock Knowledge Base abstracts the vector store backend.
 
@@ -57,7 +67,7 @@ class BedrockKBVector:
         }
         if filter:
             kwargs["retrievalConfiguration"]["vectorSearchConfiguration"]["filter"] = {
-                "andAll": [{"equals": {"key": k, "value": v}} for k, v in filter.items()]
+                **_bedrock_filter(filter)
             }
         resp = self.agent_runtime.retrieve(**kwargs)
         return [

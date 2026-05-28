@@ -25,11 +25,7 @@ class S3Storage:
 
     def put_metadata(self, key: str, metadata: dict) -> str:
         sidecar_key = f"{key}.metadata.json"
-        attributes = [
-            {"key": str(k), "value": {"type": "STRING", "stringValue": str(v)}}
-            for k, v in metadata.items()
-            if v is not None
-        ]
+        attributes = {str(k): str(v) for k, v in metadata.items() if v is not None}
         self.s3.put_object(
             Bucket=self.bucket,
             Key=sidecar_key,

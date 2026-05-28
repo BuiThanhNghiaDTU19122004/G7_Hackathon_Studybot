@@ -5,7 +5,11 @@ from src.adapters import ai, storage, userstore, vector
 
 def make_ai():
     if config.ai_backend == "bedrock":
-        return ai.BedrockAI(region=config.aws_region, model_id=config.ai_model_id)
+        return ai.BedrockAI(
+            region=config.bedrock_region,
+            model_id=config.ai_model_id,
+            model_arn=config.ai_model_arn,
+        )
     if config.ai_backend == "local":
         return ai.LocalAI()
     raise ValueError(f"Unknown AI_BACKEND: {config.ai_backend!r} (expected 'bedrock' or 'local')")
@@ -50,7 +54,7 @@ def make_vector():
         return vector.BedrockKBVector(
             kb_id=config.vector_bedrock_kb_id,
             data_source_id=config.vector_bedrock_data_source_id,
-            region=config.aws_region,
+            region=config.bedrock_region,
         )
     if config.vector_backend == "local":
         if _local_vector_singleton is None:

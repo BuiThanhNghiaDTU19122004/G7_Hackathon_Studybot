@@ -7,13 +7,24 @@ Interface:
 from typing import Any
 
 
+def _bedrock_filter(metadata_filter: dict) -> dict:
+    conditions = [
+        {"equals": {"key": str(k), "value": str(v)}}
+        for k, v in metadata_filter.items()
+    ]
+    if len(conditions) == 1:
+        return conditions[0]
+    return {"andAll": conditions}
+
+
 class BedrockAI:
     """Real Amazon Bedrock client. Uses Converse API for invoke; bedrock-agent-runtime for RAG."""
 
-    def __init__(self, region: str, model_id: str):
+    def __init__(self, region: str, model_id: str, model_arn: str = ""):
         import boto3
         self.region = region
         self.model_id = model_id
+        self.model_arn = model_arn
         self.runtime = boto3.client("bedrock-runtime", region_name=region)
         self.agent_runtime = boto3.client("bedrock-agent-runtime", region_name=region)
 
@@ -29,7 +40,7 @@ class BedrockAI:
     def retrieve_and_generate(self, query: str, kb_id: str = "", filter: dict | None = None) -> dict:
         if not kb_id:
             raise ValueError("VECTOR_BEDROCK_KB_ID must be set for Bedrock KB retrieve_and_generate")
-        model_arn = f"arn:aws:bedrock:{self.region}::foundation-model/{self.model_id}"
+        model_arn = self.model_arn or f"arn:aws:bedrock:{self.region}::foundation-model/{self.model_id}"
         kb_config = {
             "knowledgeBaseId": kb_id,
             "modelArn": model_arn,
@@ -37,12 +48,7 @@ class BedrockAI:
         if filter:
             kb_config["retrievalConfiguration"] = {
                 "vectorSearchConfiguration": {
-                    "filter": {
-                        "andAll": [
-                            {"equals": {"key": str(k), "value": str(v)}}
-                            for k, v in filter.items()
-                        ]
-                    }
+                    "filter": _bedrock_filter(filter)
                 }
             }
         resp = self.agent_runtime.retrieve_and_generate(
