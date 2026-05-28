@@ -7,6 +7,9 @@ import uuid
 from src.config import config
 
 
+TEXT_EXTENSIONS = (".txt", ".md", ".csv", ".html", ".htm")
+
+
 PROMPT_TEMPLATE = """You are a study assistant. Answer the student's question using ONLY the
 context retrieved from their uploaded lecture notes. Cite the source by chunk
 number where possible. If the context does not contain the answer, say so
@@ -84,9 +87,14 @@ def _extract_text(filename: str, data: bytes) -> str:
         try:
             from pypdf import PdfReader
         except ImportError:
-            return "(pypdf not installed; install requirements.txt)"
-        reader = PdfReader(io.BytesIO(data))
-        return "\n\n".join(page.extract_text() or "" for page in reader.pages)
+            return ""
+        try:
+            reader = PdfReader(io.BytesIO(data))
+            return "\n\n".join(page.extract_text() or "" for page in reader.pages)
+        except Exception:
+            return ""
+    if not name.endswith(TEXT_EXTENSIONS):
+        return ""
     try:
         return data.decode("utf-8", errors="replace")
     except Exception:
@@ -100,6 +108,20 @@ def _build_storage_key(*parts: str) -> str:
 def _original_file_key(user_id: str, doc_id: str, filename: str, use_kb_prefix: bool) -> str:
     prefix = config.storage_key_prefix if use_kb_prefix else "uploads"
     return _build_storage_key(prefix, user_id, doc_id, filename)
+
+
+def _raw_file_key(user_id: str, doc_id: str, filename: str) -> str:
+    return _build_storage_key("uploads", user_id, doc_id, filename)
+
+
+def _kb_file_key(user_id: str, doc_id: str, filename: str) -> str:
+    return _build_storage_key(config.storage_key_prefix or "kb", user_id, doc_id, filename)
+
+
+def _kb_ingest_document(filename: str, data: bytes, extracted_text: str) -> tuple[str, bytes, str]:
+    if filename.lower().endswith(".pdf") and extracted_text.strip():
+        return f"{filename}.txt", extracted_text.encode("utf-8"), "extracted_text"
+    return filename, data, "original"
 
 
 def _extract_json_object(text: str) -> dict | None:
@@ -241,22 +263,35 @@ def _normalize_quiz_payload(text: str, count: int) -> dict:
 
 def handle_upload(user_id: str, filename: str, data: bytes, storage, userstore, vector_store) -> dict:
     doc_id = str(uuid.uuid4())
-    use_kb_prefix = config.vector_backend == "bedrock_kb"
-    key = _original_file_key(user_id, doc_id, filename, use_kb_prefix=use_kb_prefix)
-    location = storage.put(key, data)
+    raw_key = _raw_file_key(user_id, doc_id, filename)
+    location = storage.put(raw_key, data)
     text = _extract_text(filename, data)
     kb_metadata = {"user_id": user_id, "doc_id": doc_id, "filename": filename}
-    kb_key = key
+    kb_key = ""
     kb_text_location = ""
     kb_sync_ready = config.vector_backend == "bedrock_kb"
-    if hasattr(storage, "put_metadata") and kb_sync_ready:
-        storage.put_metadata(key, kb_metadata)
-    if (config.vector_backend == "bedrock_kb" and kb_sync_ready) or text.strip():
+
+    if kb_sync_ready:
+        kb_filename, kb_data, kb_source = _kb_ingest_document(filename, data, text)
+        kb_key = _kb_file_key(user_id, doc_id, kb_filename)
+        kb_text_location = storage.put(kb_key, kb_data)
+        if hasattr(storage, "put_metadata"):
+            storage.put_metadata(kb_key, {**kb_metadata, "kb_source": kb_source})
         vector_store.ingest(doc_id=doc_id, text=text, metadata=kb_metadata)
+    elif text.strip():
+        vector_store.ingest(doc_id=doc_id, text=text, metadata=kb_metadata)
+
     userstore.add_doc(
         user_id=user_id,
         doc_id=doc_id,
-        metadata={"filename": filename, "size": len(data), "location": location, "chars": len(text)},
+        metadata={
+            "filename": filename,
+            "size": len(data),
+            "location": location,
+            "chars": len(text),
+            "s3_key": raw_key,
+            "kb_s3_key": kb_key,
+        },
     )
     return {
         "doc_id": doc_id,
@@ -264,7 +299,7 @@ def handle_upload(user_id: str, filename: str, data: bytes, storage, userstore, 
         "size": len(data),
         "chars_extracted": len(text),
         "location": location,
-        "s3_key": key,
+        "s3_key": raw_key,
         "kb_s3_key": kb_key if config.vector_backend == "bedrock_kb" and kb_sync_ready else "",
         "kb_text_location": kb_text_location,
         "kb_sync_requested": config.vector_backend == "bedrock_kb" and kb_sync_ready,
@@ -326,6 +361,26 @@ def handle_summarize(user_id: str, ai_client, userstore, vector_store, vector_ba
     return {"summary": summary, "citations": citations}
 
 
+def _structured_context_prompt(context: str, task: str) -> str:
+    return (
+        "Use ONLY the CONTEXT below. Return exactly one valid JSON object matching the schema. "
+        "Do not include Markdown, code fences, comments, or extra prose. "
+        "If the context is short, still create useful study items from the available text.\n\n"
+        f"CONTEXT:\n{context}\n\n"
+        f"TASK:\n{task}\n\n"
+        "JSON:"
+    )
+
+
+def _no_synced_context_message(kind: str, doc_id: str | None) -> str:
+    target = f" cho tài liệu {doc_id}" if doc_id else ""
+    return (
+        f"Chưa tìm thấy nội dung đã sync trong Knowledge Base{target}. "
+        "Hãy kiểm tra sync history của data source, đợi job hoàn tất rồi tạo lại. "
+        "Nếu đây là PDF, hãy dùng data source Default parsing hoặc để app index bản text đã trích xuất."
+    )
+
+
 def handle_quiz(
     user_id: str,
     count: int,
@@ -345,18 +400,28 @@ def handle_quiz(
         'Schema: {"questions":[{"question":"...","options":[{"id":"A","text":"..."},{"id":"B","text":"..."},{"id":"C","text":"..."},{"id":"D","text":"..."}],"answer":"A","explanation":"..."}]}. '
         "Use facts from the document. If context is thin, create questions from the available text."
     )
-    if vector_backend == "bedrock_kb":
-        result = ai_client.retrieve_and_generate(query=task, kb_id=bedrock_kb_id, filter=_metadata_filter(user_id, doc_id))
-        raw = result["answer"]
-        citations = result["citations"]
-    else:
-        context, citations = _retrieve_context(user_id, task, vector_store, top_k=10, doc_id=doc_id)
-        if not context:
-            raw = '{"questions":[]}'
-            citations = []
-        else:
-            raw = ai_client.invoke(f"CONTEXT:\n{context}\n\n{task}", max_tokens=1100)
+    retrieval_query = (
+        "Các khái niệm, định nghĩa, quy tắc, ví dụ và điểm quan trọng trong tài liệu "
+        "để tạo câu hỏi trắc nghiệm ôn tập."
+    )
+    context, citations = _retrieve_context(user_id, retrieval_query, vector_store, top_k=12, doc_id=doc_id)
+    if not context:
+        raw = _no_synced_context_message("quiz", doc_id)
+        userstore.log_query(user_id=user_id, query=f"Generate {difficulty} quiz", answer=raw)
+        return {"quiz": raw, "quiz_json": None, "difficulty": difficulty, "count": count, "citations": citations}
+
+    raw = ai_client.invoke(_structured_context_prompt(context, task), max_tokens=1100, temperature=0.1)
     payload = _normalize_quiz_payload(raw, count)
+    if not payload["questions"]:
+        raw = ai_client.invoke(
+            _structured_context_prompt(
+                context,
+                task + " The previous output was invalid or empty. Create the JSON now.",
+            ),
+            max_tokens=1100,
+            temperature=0,
+        )
+        payload = _normalize_quiz_payload(raw, count)
     userstore.log_query(user_id=user_id, query=f"Generate {difficulty} quiz", answer=json.dumps(payload, ensure_ascii=False))
     return {"quiz": json.dumps(payload, ensure_ascii=False), "quiz_json": payload, "difficulty": difficulty, "count": count, "citations": citations}
 
@@ -378,18 +443,28 @@ def handle_flashcards(
         'Schema: {"cards":[{"front":"...","back":"..."}]}. '
         "Use concise front/back text grounded in the document. If context is thin, use what is available."
     )
-    if vector_backend == "bedrock_kb":
-        result = ai_client.retrieve_and_generate(query=task, kb_id=bedrock_kb_id, filter=_metadata_filter(user_id, doc_id))
-        raw = result["answer"]
-        citations = result["citations"]
-    else:
-        context, citations = _retrieve_context(user_id, task, vector_store, top_k=10, doc_id=doc_id)
-        if not context:
-            raw = '{"cards":[]}'
-            citations = []
-        else:
-            raw = ai_client.invoke(f"CONTEXT:\n{context}\n\n{task}", max_tokens=900)
+    retrieval_query = (
+        "Các thuật ngữ, định nghĩa, khái niệm chính và ý quan trọng trong tài liệu "
+        "để tạo flashcard ôn tập."
+    )
+    context, citations = _retrieve_context(user_id, retrieval_query, vector_store, top_k=12, doc_id=doc_id)
+    if not context:
+        raw = _no_synced_context_message("flashcards", doc_id)
+        userstore.log_query(user_id=user_id, query="Generate flashcards", answer=raw)
+        return {"flashcards": raw, "flashcards_json": None, "count": count, "citations": citations}
+
+    raw = ai_client.invoke(_structured_context_prompt(context, task), max_tokens=900, temperature=0.1)
     payload = _normalize_flashcard_payload(raw, count)
+    if not payload["cards"]:
+        raw = ai_client.invoke(
+            _structured_context_prompt(
+                context,
+                task + " The previous output was invalid or empty. Create the JSON now.",
+            ),
+            max_tokens=900,
+            temperature=0,
+        )
+        payload = _normalize_flashcard_payload(raw, count)
     userstore.log_query(user_id=user_id, query="Generate flashcards", answer=json.dumps(payload, ensure_ascii=False))
     return {"flashcards": json.dumps(payload, ensure_ascii=False), "flashcards_json": payload, "count": count, "citations": citations}
 

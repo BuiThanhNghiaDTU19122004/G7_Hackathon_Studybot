@@ -23,6 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from fastapi.testclient import TestClient
 from src.app import app
+from src import handlers
 from src.handlers import _normalize_flashcard_payload, _normalize_quiz_payload
 
 
@@ -115,6 +116,79 @@ def test_normalize_flashcards_accepts_common_llm_variants():
             {"front": "Pipeline", "back": "Chuỗi bước xử lý phần mềm."},
         ]
     }
+
+
+class FakeStructuredAI:
+    def __init__(self, response):
+        self.response = response
+        self.prompts = []
+
+    def invoke(self, prompt, **kwargs):
+        self.prompts.append(prompt)
+        return self.response
+
+    def retrieve_and_generate(self, *args, **kwargs):
+        raise AssertionError("structured tools should retrieve context before invoking the model")
+
+
+class FakeVectorStore:
+    def __init__(self, chunks):
+        self.chunks = chunks
+        self.searches = []
+
+    def search(self, query, top_k=5, filter=None):
+        self.searches.append({"query": query, "top_k": top_k, "filter": filter})
+        return self.chunks[:top_k]
+
+
+class FakeUserStore:
+    def __init__(self):
+        self.logs = []
+
+    def log_query(self, user_id, query, answer):
+        self.logs.append({"user_id": user_id, "query": query, "answer": answer})
+
+
+def test_quiz_uses_retrieved_context_for_structured_generation():
+    ai = FakeStructuredAI(
+        '{"questions":[{"question":"What is CI/CD?","options":["Automation","Manual only"],"answer":"A"}]}'
+    )
+    vector = FakeVectorStore([
+        {
+            "text": "CI/CD automates build, test, and deployment steps.",
+            "metadata": {"user_id": "u1", "doc_id": "d1", "filename": "rules.txt"},
+            "score": 1.0,
+        }
+    ])
+    result = handlers.handle_quiz(
+        user_id="u1",
+        count=3,
+        difficulty="medium",
+        ai_client=ai,
+        userstore=FakeUserStore(),
+        vector_store=vector,
+        vector_backend="bedrock_kb",
+        bedrock_kb_id="kb",
+        doc_id="d1",
+    )
+    assert result["quiz_json"]["questions"][0]["question"] == "What is CI/CD?"
+    assert vector.searches[0]["filter"] == {"user_id": "u1", "doc_id": "d1"}
+    assert "CONTEXT:" in ai.prompts[0]
+
+
+def test_flashcards_return_sync_message_when_selected_doc_has_no_chunks():
+    result = handlers.handle_flashcards(
+        user_id="u1",
+        count=5,
+        ai_client=FakeStructuredAI('{"cards":[]}'),
+        userstore=FakeUserStore(),
+        vector_store=FakeVectorStore([]),
+        vector_backend="bedrock_kb",
+        bedrock_kb_id="kb",
+        doc_id="missing-doc",
+    )
+    assert result["flashcards_json"] is None
+    assert "Knowledge Base" in result["flashcards"]
 
 
 def test_normalize_quiz_accepts_string_options_and_answer_text():

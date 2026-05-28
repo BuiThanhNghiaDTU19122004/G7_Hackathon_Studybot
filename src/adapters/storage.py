@@ -25,7 +25,17 @@ class S3Storage:
 
     def put_metadata(self, key: str, metadata: dict) -> str:
         sidecar_key = f"{key}.metadata.json"
-        attributes = {str(k): str(v) for k, v in metadata.items() if v is not None}
+        attributes = {
+            str(k): {
+                "value": {
+                    "type": "STRING",
+                    "stringValue": str(v),
+                },
+                "includeForEmbedding": False,
+            }
+            for k, v in metadata.items()
+            if v is not None
+        }
         self.s3.put_object(
             Bucket=self.bucket,
             Key=sidecar_key,
@@ -59,7 +69,18 @@ class LocalStorage:
     def put_metadata(self, key: str, metadata: dict) -> str:
         path = self.base / f"{key}.metadata.json"
         path.parent.mkdir(parents=True, exist_ok=True)
-        path.write_text(json.dumps(metadata), encoding="utf-8")
+        attributes = {
+            str(k): {
+                "value": {
+                    "type": "STRING",
+                    "stringValue": str(v),
+                },
+                "includeForEmbedding": False,
+            }
+            for k, v in metadata.items()
+            if v is not None
+        }
+        path.write_text(json.dumps({"metadataAttributes": attributes}), encoding="utf-8")
         return f"file://{path.resolve()}"
 
     def get(self, key: str) -> bytes:
