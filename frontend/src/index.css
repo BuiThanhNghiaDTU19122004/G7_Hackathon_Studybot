@@ -779,6 +779,52 @@
       background: var(--ghost-btn-bg);
     }
 
+    .sidebar-doc-row {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) 32px;
+      gap: 0.35rem;
+      align-items: stretch;
+    }
+
+    .sidebar-doc-row .sidebar-doc-item {
+      min-width: 0;
+    }
+
+    .sidebar-doc-item span {
+      min-width: 0;
+      white-space: nowrap;
+      overflow: hidden;
+      text-overflow: ellipsis;
+    }
+
+    .sidebar-doc-delete {
+      width: 32px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: transparent;
+      color: var(--muted);
+      display: grid;
+      place-items: center;
+      opacity: 0;
+      transition: opacity 0.18s ease, border-color 0.18s ease, color 0.18s ease, background 0.18s ease;
+    }
+
+    .sidebar-doc-row:hover .sidebar-doc-delete,
+    .sidebar-doc-delete:focus-visible {
+      opacity: 1;
+    }
+
+    .sidebar-doc-delete:hover:not(:disabled) {
+      color: var(--error);
+      border-color: color-mix(in srgb, var(--error) 40%, var(--border));
+      background: color-mix(in srgb, var(--error) 10%, transparent);
+    }
+
+    .sidebar-doc-delete:disabled {
+      cursor: wait;
+      opacity: 0.75;
+    }
+
     .history-item:hover,
     .sidebar-doc-item:hover {
       background: var(--sidebar-hover);
@@ -792,7 +838,8 @@
       font-weight: 500;
     }
 
-    .sidebar-doc-item.active {
+    .sidebar-doc-item.active,
+    .sidebar-doc-row.active .sidebar-doc-item {
       background: var(--accent-light);
       border-color: var(--accent);
       color: var(--accent);
@@ -1497,6 +1544,12 @@
       border-radius: 50%;
       animation: spin 0.8s linear infinite;
       vertical-align: middle;
+    }
+
+    .spinner.tiny {
+      width: 13px;
+      height: 13px;
+      border-width: 2px;
     }
 
     @keyframes spin {

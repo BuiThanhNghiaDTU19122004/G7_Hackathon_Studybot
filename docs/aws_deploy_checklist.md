@@ -52,12 +52,15 @@ lambda_entry.handler
 Use the Lambda-only requirements file. Do not upload `.venv`.
 
 ```powershell
+Remove-Item build -Recurse -Force -ErrorAction SilentlyContinue
 New-Item -ItemType Directory -Force build
 .\.venv\Scripts\python.exe -m pip install -r requirements-lambda.txt -t build
 Copy-Item lambda_entry.py build\
 Copy-Item src build\src -Recurse
 Compress-Archive -Path build\* -DestinationPath studybot-lambda.zip -Force
 ```
+
+Lambda already includes `boto3`/`botocore`, so keep them out of the package unless you have a specific reason to vendor them.
 
 Upload:
 

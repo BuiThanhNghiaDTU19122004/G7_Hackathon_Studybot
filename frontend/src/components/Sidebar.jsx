@@ -1,11 +1,12 @@
 import React, { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { signOut } from 'aws-amplify/auth';
-import { BookOpen, FileText, History, LogOut, Plus, Sparkles, X } from 'lucide-react';
+import { BookOpen, FileText, History, LogOut, Plus, Sparkles, Trash2, X } from 'lucide-react';
 
-const Sidebar = ({ isOpen, setIsOpen, docs, recent, isLoading, selectedDoc, setSelectedDoc }) => {
+const Sidebar = ({ isOpen, setIsOpen, docs, recent, isLoading, selectedDoc, setSelectedDoc, onDeleteDoc }) => {
   const navigate = useNavigate();
   const [chatHistory, setChatHistory] = useState([]);
+  const [deletingDocId, setDeletingDocId] = useState('');
 
   useEffect(() => {
     const loadHistory = () => {
@@ -35,6 +36,19 @@ const Sidebar = ({ isOpen, setIsOpen, docs, recent, isLoading, selectedDoc, setS
     localStorage.setItem('studybot_history', JSON.stringify(next));
     setChatHistory(next);
     window.dispatchEvent(new Event('history-updated'));
+  };
+
+  const deleteDocItem = async (event, doc) => {
+    event.stopPropagation();
+    if (!doc?.doc_id || deletingDocId) return;
+    const filename = doc.filename || doc.doc_id;
+    if (!window.confirm(`Xóa "${filename}" khỏi workspace?`)) return;
+    setDeletingDocId(doc.doc_id);
+    try {
+      await onDeleteDoc?.(doc);
+    } finally {
+      setDeletingDocId('');
+    }
   };
 
   const handleLogout = async () => {
@@ -89,19 +103,32 @@ const Sidebar = ({ isOpen, setIsOpen, docs, recent, isLoading, selectedDoc, setS
               <div className="empty-sidebar">Chưa có tài liệu nào.</div>
             ) : (
               docs.slice(0, 8).map((doc) => (
-                <button
+                <div
                   key={doc.doc_id || doc.filename}
-                  className={`sidebar-doc-item ${selectedDoc?.doc_id === doc.doc_id ? 'active' : ''}`}
-                  title={doc.filename || doc.doc_id}
-                  onClick={() => {
-                    setSelectedDoc(doc);
-                    setIsOpen(false);
-                    window.dispatchEvent(new CustomEvent('doc-selected', { detail: doc }));
-                  }}
+                  className={`sidebar-doc-row ${selectedDoc?.doc_id === doc.doc_id ? 'active' : ''}`}
                 >
-                  <FileText size={16} />
-                  <span>{doc.filename || doc.doc_id}</span>
-                </button>
+                  <button
+                    className="sidebar-doc-item"
+                    title={doc.filename || doc.doc_id}
+                    onClick={() => {
+                      setSelectedDoc(doc);
+                      setIsOpen(false);
+                      window.dispatchEvent(new CustomEvent('doc-selected', { detail: doc }));
+                    }}
+                  >
+                    <FileText size={16} />
+                    <span>{doc.filename || doc.doc_id}</span>
+                  </button>
+                  <button
+                    className="sidebar-doc-delete"
+                    type="button"
+                    title="Xóa tài liệu"
+                    disabled={deletingDocId === doc.doc_id}
+                    onClick={(event) => deleteDocItem(event, doc)}
+                  >
+                    {deletingDocId === doc.doc_id ? <span className="spinner tiny" /> : <Trash2 size={14} />}
+                  </button>
+                </div>
               ))
             )}
           </div>

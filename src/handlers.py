@@ -44,6 +44,8 @@ def _citations_from_chunks(chunks: list[dict]) -> list[dict]:
             "doc_id": doc_id,
             "filename": filename,
             "score": chunk.get("score"),
+            "uri": metadata.get("uri", ""),
+            "source": metadata.get("source", {}),
         })
     return citations
 
@@ -79,6 +81,13 @@ def _retrieve_context(user_id: str, query: str, vector_store, top_k: int = 8, do
     if not chunks:
         chunks = _fallback_local_chunks(user_id, vector_store, top_k=top_k, doc_id=doc_id)
     return _context_from_chunks(chunks), _citations_from_chunks(chunks)
+
+
+def _selected_doc_missing_message() -> str:
+    return (
+        "Mình chưa tìm thấy nội dung đã sync cho tài liệu đang chọn. "
+        "Bạn đợi Knowledge Base sync xong rồi hỏi lại nhé."
+    )
 
 
 def _extract_text(filename: str, data: bytes) -> str:
@@ -307,8 +316,24 @@ def handle_upload(user_id: str, filename: str, data: bytes, storage, userstore, 
     }
 
 
-def handle_query(user_id: str, question: str, ai_client, userstore, vector_store, vector_backend: str, bedrock_kb_id: str) -> dict:
-    if vector_backend == "bedrock_kb":
+def handle_query(
+    user_id: str,
+    question: str,
+    ai_client,
+    userstore,
+    vector_store,
+    vector_backend: str,
+    bedrock_kb_id: str,
+    doc_id: str | None = None,
+) -> dict:
+    if doc_id:
+        context, citations = _retrieve_context(user_id, question, vector_store, top_k=8, doc_id=doc_id)
+        if not context:
+            answer = _selected_doc_missing_message()
+        else:
+            prompt = PROMPT_TEMPLATE.format(context=context, question=question)
+            answer = ai_client.invoke(prompt, max_tokens=512)
+    elif vector_backend == "bedrock_kb":
         rag_question = (
             "Tra loi bang tieng Viet, than thien va ngan gon. "
             "Chi dua tren tai lieu da truy xuat. "
@@ -320,12 +345,12 @@ def handle_query(user_id: str, question: str, ai_client, userstore, vector_store
         result = ai_client.retrieve_and_generate(
             query=rag_question,
             kb_id=bedrock_kb_id,
-            filter={"user_id": user_id},
+            filter=_metadata_filter(user_id, doc_id),
         )
         answer = result["answer"]
         citations = result["citations"]
     else:
-        chunks = vector_store.search(question, top_k=5, filter={"user_id": user_id})
+        chunks = vector_store.search(question, top_k=5, filter=_metadata_filter(user_id, doc_id))
         if not chunks:
             answer = "No relevant content found in your uploaded documents. Upload some first."
             citations = []
@@ -337,6 +362,39 @@ def handle_query(user_id: str, question: str, ai_client, userstore, vector_store
 
     userstore.log_query(user_id=user_id, query=question, answer=answer)
     return {"question": question, "answer": answer, "citations": citations}
+
+
+def handle_delete_doc(user_id: str, doc_id: str, storage, userstore, vector_store) -> dict:
+    doc = userstore.get_doc(user_id, doc_id)
+    if not doc:
+        return {"deleted": False, "doc_id": doc_id, "reason": "not_found"}
+
+    keys = [
+        key
+        for key in {
+            doc.get("s3_key"),
+            doc.get("kb_s3_key"),
+            f"{doc.get('kb_s3_key')}.metadata.json" if doc.get("kb_s3_key") else "",
+        }
+        if key
+    ]
+    deleted_keys = []
+    for key in keys:
+        if hasattr(storage, "delete") and storage.delete(key):
+            deleted_keys.append(key)
+
+    kb_sync_requested = False
+    if hasattr(vector_store, "delete"):
+        kb_sync_requested = bool(vector_store.delete(doc_id))
+
+    userstore.delete_doc(user_id, doc_id)
+    return {
+        "deleted": True,
+        "doc_id": doc_id,
+        "filename": doc.get("filename"),
+        "deleted_keys": deleted_keys,
+        "kb_sync_requested": kb_sync_requested,
+    }
 
 
 def handle_summarize(user_id: str, ai_client, userstore, vector_store, vector_backend: str, bedrock_kb_id: str, doc_id: str | None = None) -> dict:

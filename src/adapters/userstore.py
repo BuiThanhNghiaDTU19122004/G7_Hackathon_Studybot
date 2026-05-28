@@ -2,7 +2,9 @@
 
 Interface:
     add_doc(user_id, doc_id, metadata: dict) -> None
+    get_doc(user_id, doc_id) -> dict | None
     list_docs(user_id) -> list[dict]
+    delete_doc(user_id, doc_id) -> bool
     log_query(user_id, query, answer) -> None
     recent_queries(user_id, limit=10) -> list[dict]
 """
@@ -41,6 +43,14 @@ class DynamoDBUserStore:
             ExpressionAttributeValues={":u": user_id, ":p": "DOC#"},
         )
         return resp.get("Items", [])
+
+    def get_doc(self, user_id: str, doc_id: str) -> dict | None:
+        resp = self.table.get_item(Key={"user_id": user_id, "sk": f"DOC#{doc_id}"})
+        return resp.get("Item")
+
+    def delete_doc(self, user_id: str, doc_id: str) -> bool:
+        self.table.delete_item(Key={"user_id": user_id, "sk": f"DOC#{doc_id}"})
+        return True
 
     def log_query(self, user_id: str, query: str, answer: str) -> None:
         ts = _now()
@@ -117,6 +127,22 @@ class PostgresUserStore:
                 for r in cur.fetchall()
             ]
 
+    def get_doc(self, user_id, doc_id):
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT doc_id, metadata, created_at FROM user_docs WHERE user_id = %s AND doc_id = %s",
+                (user_id, doc_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {"doc_id": row[0], **(row[1] or {}), "created_at": row[2].isoformat()}
+
+    def delete_doc(self, user_id, doc_id):
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM user_docs WHERE user_id = %s AND doc_id = %s", (user_id, doc_id))
+            return cur.rowcount > 0
+
     def log_query(self, user_id, query, answer):
         with self.conn.cursor() as cur:
             cur.execute(
@@ -183,6 +209,24 @@ class SQLiteUserStore:
             for r in cur.fetchall()
         ]
 
+    def get_doc(self, user_id, doc_id):
+        cur = self.conn.execute(
+            "SELECT doc_id, metadata, created_at FROM user_docs WHERE user_id = ? AND doc_id = ?",
+            (user_id, doc_id),
+        )
+        row = cur.fetchone()
+        if not row:
+            return None
+        return {"doc_id": row[0], **(json.loads(row[1]) if row[1] else {}), "created_at": row[2]}
+
+    def delete_doc(self, user_id, doc_id):
+        cur = self.conn.execute(
+            "DELETE FROM user_docs WHERE user_id = ? AND doc_id = ?",
+            (user_id, doc_id),
+        )
+        self.conn.commit()
+        return cur.rowcount > 0
+
     def log_query(self, user_id, query, answer):
         self.conn.execute(
             "INSERT INTO user_queries (user_id, query, answer) VALUES (?, ?, ?)",
@@ -242,6 +286,16 @@ class DocumentDBUserStore:
             {**{k: v for k, v in d.items() if k != "_id"}}
             for d in self.docs.find({"user_id": user_id}).sort("created_at", -1)
         ]
+
+    def get_doc(self, user_id: str, doc_id: str) -> dict | None:
+        doc = self.docs.find_one({"user_id": user_id, "doc_id": doc_id})
+        if not doc:
+            return None
+        return {k: v for k, v in doc.items() if k != "_id"}
+
+    def delete_doc(self, user_id: str, doc_id: str) -> bool:
+        result = self.docs.delete_one({"user_id": user_id, "doc_id": doc_id})
+        return result.deleted_count > 0
 
     def log_query(self, user_id: str, query: str, answer: str) -> None:
         self.queries.insert_one({
@@ -317,6 +371,22 @@ class MySQLUserStore:
                 {"doc_id": r[0], **(json.loads(r[1]) if r[1] else {}), "created_at": str(r[2])}
                 for r in cur.fetchall()
             ]
+
+    def get_doc(self, user_id, doc_id):
+        with self.conn.cursor() as cur:
+            cur.execute(
+                "SELECT doc_id, metadata, created_at FROM user_docs WHERE user_id = %s AND doc_id = %s",
+                (user_id, doc_id),
+            )
+            row = cur.fetchone()
+            if not row:
+                return None
+            return {"doc_id": row[0], **(json.loads(row[1]) if row[1] else {}), "created_at": str(row[2])}
+
+    def delete_doc(self, user_id, doc_id):
+        with self.conn.cursor() as cur:
+            cur.execute("DELETE FROM user_docs WHERE user_id = %s AND doc_id = %s", (user_id, doc_id))
+            return cur.rowcount > 0
 
     def log_query(self, user_id, query, answer):
         with self.conn.cursor() as cur:

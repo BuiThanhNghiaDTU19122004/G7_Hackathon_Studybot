@@ -22,7 +22,7 @@ from src.adapters import factory
 from src import handlers
 
 
-APP_VERSION = "2026-05-28-filter-single-equals"
+APP_VERSION = "2026-05-28-selected-doc-query-delete"
 
 app = FastAPI(title="StudyBot — W7 Capstone Starter")
 
@@ -79,6 +79,7 @@ def _resolve_user_id(x_user_id: str | None, authorization: str | None = None) ->
 
 class QueryRequest(BaseModel):
     question: str
+    doc_id: str | None = None
 
 
 class QuizRequest(BaseModel):
@@ -148,6 +149,7 @@ def query(
         vector_store=vector_store,
         vector_backend=config.vector_backend,
         bedrock_kb_id=config.vector_bedrock_kb_id,
+        doc_id=req.doc_id,
     )
 
 
@@ -280,6 +282,24 @@ def list_docs(
     authorization: str | None = Header(default=None),
 ) -> dict:
     return handlers.handle_list_docs(_resolve_user_id(x_user_id, authorization), userstore)
+
+
+@app.delete("/docs/{doc_id}")
+def delete_doc(
+    doc_id: str,
+    x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    result = handlers.handle_delete_doc(
+        user_id=_resolve_user_id(x_user_id, authorization),
+        doc_id=doc_id,
+        storage=storage,
+        userstore=userstore,
+        vector_store=vector_store,
+    )
+    if not result["deleted"]:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return result
 
 
 @app.get("/queries/recent")

@@ -5,6 +5,7 @@ Interface:
     put_metadata(key, metadata) -> str
     get(key) -> bytes
     list(prefix="") -> list[str]
+    delete(key) -> bool
 """
 import json
 from pathlib import Path
@@ -48,6 +49,10 @@ class S3Storage:
         resp = self.s3.get_object(Bucket=self.bucket, Key=key)
         return resp["Body"].read()
 
+    def delete(self, key: str) -> bool:
+        self.s3.delete_object(Bucket=self.bucket, Key=key)
+        return True
+
     def list(self, prefix: str = "") -> list:
         resp = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=prefix)
         return [obj["Key"] for obj in resp.get("Contents", [])]
@@ -85,6 +90,13 @@ class LocalStorage:
 
     def get(self, key: str) -> bytes:
         return (self.base / key).read_bytes()
+
+    def delete(self, key: str) -> bool:
+        path = self.base / key
+        if not path.exists():
+            return False
+        path.unlink()
+        return True
 
     def list(self, prefix: str = "") -> list:
         results = []

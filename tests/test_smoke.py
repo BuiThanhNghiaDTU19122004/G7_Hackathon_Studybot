@@ -100,6 +100,31 @@ def test_list_docs_per_user_isolation():
     assert any(d["filename"] == "b.txt" for d in b_docs)
 
 
+def test_delete_doc_removes_doc_and_local_chunks():
+    upload = client.post(
+        "/upload",
+        files={"file": ("delete-me.txt", b"Retention schedule is seven days.", "text/plain")},
+        headers={"X-User-Id": "delete-user"},
+    )
+    assert upload.status_code == 200, upload.text
+    doc_id = upload.json()["doc_id"]
+
+    deleted = client.delete(f"/docs/{doc_id}", headers={"X-User-Id": "delete-user"})
+    assert deleted.status_code == 200, deleted.text
+    assert deleted.json()["deleted"] is True
+
+    docs = client.get("/docs/list", headers={"X-User-Id": "delete-user"}).json()["docs"]
+    assert all(doc["doc_id"] != doc_id for doc in docs)
+
+    query = client.post(
+        "/query",
+        json={"question": "What is the retention schedule?"},
+        headers={"X-User-Id": "delete-user"},
+    )
+    assert query.status_code == 200, query.text
+    assert query.json()["citations"] == []
+
+
 def test_normalize_flashcards_accepts_common_llm_variants():
     raw = """
     {
@@ -129,6 +154,25 @@ class FakeStructuredAI:
 
     def retrieve_and_generate(self, *args, **kwargs):
         raise AssertionError("structured tools should retrieve context before invoking the model")
+
+
+class FakeRagAI:
+    def __init__(self):
+        self.calls = []
+
+    def retrieve_and_generate(self, **kwargs):
+        self.calls.append(kwargs)
+        return {"answer": "answer", "citations": []}
+
+
+class FakeQueryAI(FakeRagAI):
+    def __init__(self):
+        super().__init__()
+        self.prompts = []
+
+    def invoke(self, prompt, **kwargs):
+        self.prompts.append(prompt)
+        return "selected doc answer"
 
 
 class FakeVectorStore:
@@ -174,6 +218,33 @@ def test_quiz_uses_retrieved_context_for_structured_generation():
     assert result["quiz_json"]["questions"][0]["question"] == "What is CI/CD?"
     assert vector.searches[0]["filter"] == {"user_id": "u1", "doc_id": "d1"}
     assert "CONTEXT:" in ai.prompts[0]
+
+
+def test_query_filters_selected_doc_for_bedrock_kb():
+    ai = FakeQueryAI()
+    userstore = FakeUserStore()
+    vector = FakeVectorStore([
+        {
+            "text": "The selected document explains demo requirements.",
+            "metadata": {"user_id": "u1", "doc_id": "d1", "filename": "rules.txt"},
+            "score": 1.0,
+        }
+    ])
+    result = handlers.handle_query(
+        user_id="u1",
+        question="What is in this doc?",
+        ai_client=ai,
+        userstore=userstore,
+        vector_store=vector,
+        vector_backend="bedrock_kb",
+        bedrock_kb_id="kb",
+        doc_id="d1",
+    )
+    assert result["answer"] == "selected doc answer"
+    assert ai.calls == []
+    assert "CONTEXT:" in ai.prompts[0]
+    assert vector.searches[0]["filter"] == {"user_id": "u1", "doc_id": "d1"}
+    assert result["citations"][0]["filename"] == "rules.txt"
 
 
 def test_flashcards_return_sync_message_when_selected_doc_has_no_chunks():

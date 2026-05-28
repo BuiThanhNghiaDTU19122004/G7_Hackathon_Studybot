@@ -63,3 +63,7 @@ export const callDocumentAction = async (actionType, docId = null) => {
     body: JSON.stringify(payload),
   });
 };
+
+export const deleteDocument = async (docId) => callApi(`/docs/${encodeURIComponent(docId)}`, {
+  method: 'DELETE',
+});

@@ -2,11 +2,13 @@
 
 Interface:
     ingest(doc_id, text, metadata=None) -> None
+    delete(doc_id) -> bool
     search(query, top_k=5, filter=None) -> list[dict] (each has 'text', 'doc_id', 'score', 'metadata')
 """
 import re
 from collections import Counter
 from typing import Optional
+from urllib.parse import unquote
 
 
 def _bedrock_filter(metadata_filter: dict) -> dict:
@@ -57,6 +59,37 @@ class BedrockKBVector:
         except self.agent.exceptions.ConflictException:
             return
 
+    def delete(self, doc_id: str) -> bool:
+        if not self.data_source_id:
+            return False
+        try:
+            self.agent.start_ingestion_job(
+                knowledgeBaseId=self.kb_id,
+                dataSourceId=self.data_source_id,
+                description=f"StudyBot delete sync for doc_id={doc_id}",
+            )
+        except self.agent.exceptions.ConflictException:
+            return False
+        return True
+
+    @staticmethod
+    def _metadata_from_uri(uri: str) -> dict:
+        if not uri:
+            return {}
+        path = uri.split("://", 1)[-1].split("/", 1)[-1]
+        parts = [unquote(part) for part in path.split("/") if part]
+        metadata = {}
+        if parts:
+            filename = parts[-1]
+            if filename.endswith(".metadata.json"):
+                filename = filename[:-14]
+            metadata["filename"] = filename
+        if len(parts) >= 2:
+            metadata["doc_id"] = parts[-2]
+        if len(parts) >= 3:
+            metadata["user_id"] = parts[-3]
+        return metadata
+
     def search(self, query: str, top_k: int = 5, filter: Optional[dict] = None) -> list:
         kwargs = {
             "knowledgeBaseId": self.kb_id,
@@ -70,15 +103,18 @@ class BedrockKBVector:
                 **_bedrock_filter(filter)
             }
         resp = self.agent_runtime.retrieve(**kwargs)
-        return [
-            {
+        results = []
+        for r in resp.get("retrievalResults", []):
+            location = r.get("location", {})
+            uri = location.get("s3Location", {}).get("uri", "")
+            metadata = {**self._metadata_from_uri(uri), **(r.get("metadata", {}) or {})}
+            results.append({
                 "text": r.get("content", {}).get("text", ""),
-                "doc_id": r.get("metadata", {}).get("doc_id", ""),
+                "doc_id": metadata.get("doc_id", ""),
                 "score": r.get("score", 0.0),
-                "metadata": r.get("metadata", {}),
-            }
-            for r in resp.get("retrievalResults", [])
-        ]
+                "metadata": {**metadata, "source": location, "uri": uri},
+            })
+        return results
 
 
 class LocalVector:
@@ -115,6 +151,11 @@ class LocalVector:
         md = metadata or {}
         for i, chunk in enumerate(self._chunk(text)):
             self.docs.append((f"{doc_id}#{i}", chunk, {**md, "doc_id": doc_id, "chunk_idx": i}))
+
+    def delete(self, doc_id: str) -> bool:
+        before = len(self.docs)
+        self.docs = [item for item in self.docs if item[2].get("doc_id") != doc_id]
+        return len(self.docs) != before
 
     def search(self, query: str, top_k: int = 5, filter: Optional[dict] = None) -> list:
         q_tokens = set(self._tokens(query))

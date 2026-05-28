@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import { Menu, Moon, RefreshCcw, Server, Sun } from 'lucide-react';
 import Sidebar from './Sidebar';
-import { callApi } from '../api';
+import { callApi, deleteDocument } from '../api';
 
 const Layout = ({ children, selectedDoc, setSelectedDoc }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -53,6 +53,17 @@ const Layout = ({ children, selectedDoc, setSelectedDoc }) => {
     }
   }, [docs, selectedDoc, setSelectedDoc]);
 
+  const handleDeleteDoc = useCallback(async (doc) => {
+    if (!doc?.doc_id) return;
+    await deleteDocument(doc.doc_id);
+    const remaining = docs.filter((item) => item.doc_id !== doc.doc_id);
+    setDocs(remaining);
+    if (selectedDoc?.doc_id === doc.doc_id) {
+      setSelectedDoc(remaining[0] || null);
+    }
+    window.dispatchEvent(new Event('docs-updated'));
+  }, [docs, selectedDoc, setSelectedDoc]);
+
   const statusPills = useMemo(() => {
     const backends = health?.backends || {};
     return [
@@ -73,6 +84,7 @@ const Layout = ({ children, selectedDoc, setSelectedDoc }) => {
         isLoading={isLoading}
         selectedDoc={selectedDoc}
         setSelectedDoc={setSelectedDoc}
+        onDeleteDoc={handleDeleteDoc}
       />
 
       <div className="main-content">

@@ -177,7 +177,10 @@ const ChatView = ({ selectedDoc }) => {
       const response = await callApi('/query', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ question }),
+        body: JSON.stringify({
+          question,
+          doc_id: selectedDoc?.doc_id || null,
+        }),
       });
       setMessages((prev) => [...prev, {
         role: 'bot',
