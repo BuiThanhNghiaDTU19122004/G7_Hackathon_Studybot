@@ -1,6 +1,7 @@
 """Endpoint handlers. Pure business logic; knows nothing about FastAPI or AWS specifics."""
 import io
 import json
+import mimetypes
 import re
 import uuid
 
@@ -128,9 +129,19 @@ def _kb_file_key(user_id: str, doc_id: str, filename: str) -> str:
 
 
 def _kb_ingest_document(filename: str, data: bytes, extracted_text: str) -> tuple[str, bytes, str]:
-    if filename.lower().endswith(".pdf") and extracted_text.strip():
-        return f"{filename}.txt", extracted_text.encode("utf-8"), "extracted_text"
     return filename, data, "original"
+
+
+def _content_type_for_filename(filename: str, fallback: str | None = None) -> str:
+    content_type = (fallback or "").split(";", 1)[0].strip()
+    if content_type and content_type != "application/octet-stream":
+        return content_type
+    guessed, _ = mimetypes.guess_type(filename)
+    if guessed:
+        return guessed
+    if filename.lower().endswith((".txt", ".md", ".csv", ".html", ".htm")):
+        return "text/plain"
+    return "application/octet-stream"
 
 
 def _extract_json_object(text: str) -> dict | None:
@@ -270,20 +281,31 @@ def _normalize_quiz_payload(text: str, count: int) -> dict:
     return {"questions": []}
 
 
-def handle_upload(user_id: str, filename: str, data: bytes, storage, userstore, vector_store) -> dict:
+def handle_upload(
+    user_id: str,
+    filename: str,
+    data: bytes,
+    storage,
+    userstore,
+    vector_store,
+    content_type: str | None = None,
+) -> dict:
     doc_id = str(uuid.uuid4())
     raw_key = _raw_file_key(user_id, doc_id, filename)
-    location = storage.put(raw_key, data)
-    text = _extract_text(filename, data)
+    raw_content_type = _content_type_for_filename(filename, content_type)
+    location = storage.put(raw_key, data, content_type=raw_content_type)
+    text = "" if filename.lower().endswith((".pdf", ".doc", ".docx")) else _extract_text(filename, data)
     kb_metadata = {"user_id": user_id, "doc_id": doc_id, "filename": filename}
     kb_key = ""
     kb_text_location = ""
+    status = "indexed"
     kb_sync_ready = config.vector_backend == "bedrock_kb"
 
     if kb_sync_ready:
         kb_filename, kb_data, kb_source = _kb_ingest_document(filename, data, text)
         kb_key = _kb_file_key(user_id, doc_id, kb_filename)
-        kb_text_location = storage.put(kb_key, kb_data)
+        kb_content_type = _content_type_for_filename(kb_filename, raw_content_type)
+        kb_text_location = storage.put(kb_key, kb_data, content_type=kb_content_type)
         if hasattr(storage, "put_metadata"):
             storage.put_metadata(kb_key, {**kb_metadata, "kb_source": kb_source})
         vector_store.ingest(doc_id=doc_id, text=text, metadata=kb_metadata)
@@ -300,6 +322,7 @@ def handle_upload(user_id: str, filename: str, data: bytes, storage, userstore, 
             "chars": len(text),
             "s3_key": raw_key,
             "kb_s3_key": kb_key,
+            "status": status,
         },
     )
     return {
@@ -311,8 +334,9 @@ def handle_upload(user_id: str, filename: str, data: bytes, storage, userstore, 
         "s3_key": raw_key,
         "kb_s3_key": kb_key if config.vector_backend == "bedrock_kb" and kb_sync_ready else "",
         "kb_text_location": kb_text_location,
-        "kb_sync_requested": config.vector_backend == "bedrock_kb" and kb_sync_ready,
+        "kb_sync_requested": bool(kb_text_location) and config.vector_backend == "bedrock_kb" and kb_sync_ready,
         "kb_warning": "",
+        "status": status,
     }
 
 

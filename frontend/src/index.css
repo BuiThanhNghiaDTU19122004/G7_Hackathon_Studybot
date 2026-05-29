@@ -980,9 +980,6 @@ body {
       min-height: 0;
       display: flex;
       flex-direction: column;
-      background:
-        radial-gradient(circle at top left, color-mix(in srgb, var(--accent) 9%, transparent), transparent 28rem),
-        var(--bg);
     }
 
     .study-command {

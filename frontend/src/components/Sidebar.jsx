@@ -77,7 +77,7 @@ const Sidebar = ({
           </div>
           <div>
             <h1>StudyBot</h1>
-            <p>AI learning workspace</p>
+            <p>Không gian học tập AI</p>
           </div>
         </button>
 

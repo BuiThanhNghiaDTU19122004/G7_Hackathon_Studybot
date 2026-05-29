@@ -70,17 +70,17 @@ const Register = () => {
           <div className="logo"><Sparkles color="white" size={20} /></div>
           <div>
             <strong>StudyBot</strong>
-            <span>personal study cockpit</span>
+            <span>không gian học tập cá nhân</span>
           </div>
         </div>
-        <p className="eyebrow">Build your knowledge base</p>
-        <h1>Upload once. <span>Learn everywhere.</span></h1>
+        <p className="eyebrow">Tạo thư viện học tập của bạn</p>
+        <h1>Tải tài liệu một lần. <span>Ôn tập mọi lúc.</span></h1>
         <p>Tạo tài khoản để lưu tài liệu, lịch sử hỏi, flashcard và quiz theo đúng workspace của bạn.</p>
         <div className="auth-proof">
-          <span>Private docs</span>
-          <span>Metadata filter</span>
-          <span>Fast summaries</span>
-          <span>Practice mode</span>
+          <span>Tài liệu riêng</span>
+          <span>Không lẫn dữ liệu</span>
+          <span>Tóm tắt nhanh</span>
+          <span>Luyện tập chủ động</span>
         </div>
       </section>
 

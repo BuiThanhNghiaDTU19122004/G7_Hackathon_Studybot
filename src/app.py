@@ -129,6 +129,7 @@ async def upload(
         storage=storage,
         userstore=userstore,
         vector_store=vector_store,
+        content_type=file.content_type,
     )
 
 

@@ -115,10 +115,10 @@ const Citations = ({ citations = [] }) => {
 };
 
 const BusyOverlay = ({ mode, uploadStatus }) => {
-  const label = uploadStatus || (mode === 'chat' ? 'Đang truy vấn Knowledge Base...' : 'Đang tạo nội dung học tập...');
+  const label = uploadStatus || (mode === 'chat' ? 'Đang tìm trong tài liệu của bạn...' : 'Đang tạo nội dung học tập...');
   const sub = uploadStatus
-    ? 'Tệp đang được gửi lên backend, lưu S3 và yêu cầu sync vào Knowledge Base.'
-    : 'StudyBot đang đọc context, gọi model và chuẩn bị kết quả để hiển thị.';
+    ? 'Tệp đang được tải lên và chuẩn bị để bạn có thể hỏi đáp, tóm tắt và ôn tập.'
+    : 'StudyBot đang đọc nội dung liên quan và chuẩn bị câu trả lời dễ hiểu.';
 
   return (
     <motion.div
@@ -213,8 +213,8 @@ const ChatView = ({ selectedDoc }) => {
         citations: response.citations || [],
       }]);
     } catch (err) {
-      showToast('Không gọi được /query', 'error');
-      setMessages((prev) => [...prev, { role: 'bot', error: true, content: err.message || 'Backend đang lỗi.' }]);
+      showToast('Chưa gửi được câu hỏi. Thử lại sau ít phút.', 'error');
+      setMessages((prev) => [...prev, { role: 'bot', error: true, content: err.message || 'StudyBot đang bận. Thử lại sau ít phút.' }]);
     } finally {
       setLoadingMode('');
     }
@@ -247,7 +247,7 @@ const ChatView = ({ selectedDoc }) => {
       showToast(`Không tạo được ${MODES[tool].label.toLowerCase()}`, 'error');
       setWorkspace((prev) => ({
         ...prev,
-        [tool]: { error: err.message || 'Backend đang lỗi.', raw: '', citations: [], doc: selectedDoc },
+        [tool]: { error: err.message || 'StudyBot đang bận. Thử lại sau ít phút.', raw: '', citations: [], doc: selectedDoc },
       }));
     } finally {
       setLoadingMode('');
@@ -261,7 +261,7 @@ const ChatView = ({ selectedDoc }) => {
     try {
       const result = await uploadFile(file);
       setUploadStatus(`Đã upload ${result.filename || file.name}`);
-      showToast('Upload thành công. Knowledge Base đang sync.', 'success');
+      showToast('Tải lên thành công. Tài liệu đang được chuẩn bị để học.', 'success');
       window.dispatchEvent(new Event('docs-updated'));
       window.setTimeout(() => setUploadStatus(''), 4000);
     } catch (err) {
@@ -454,7 +454,7 @@ const ChatView = ({ selectedDoc }) => {
           </button>
           <div className="sync-note">
             <Sparkles size={16} />
-            {uploadStatus || 'Tệp được lưu S3, ghi DB và sync vào Bedrock Knowledge Base.'}
+            {uploadStatus || 'Tài liệu được lưu an toàn và chuẩn bị cho hỏi đáp, tóm tắt, flashcard.'}
           </div>
         </div>
 

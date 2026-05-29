@@ -46,17 +46,17 @@ const Login = () => {
           <div className="logo"><Sparkles color="white" size={20} /></div>
           <div>
             <strong>StudyBot</strong>
-            <span>learn faster with AI</span>
+            <span>học nhanh hơn với AI</span>
           </div>
         </div>
-        <p className="eyebrow">AI learning workspace</p>
-        <h1>Turn documents into <span>study momentum.</span></h1>
+        <p className="eyebrow">Không gian học tập AI</p>
+        <h1>Biến tài liệu thành <span>phiên học dễ theo dõi.</span></h1>
         <p>Đăng nhập để tiếp tục hỏi đáp, tóm tắt, tạo flashcard và luyện quiz từ tài liệu của bạn.</p>
         <div className="auth-proof">
-          <span>Bedrock KB</span>
-          <span>Cognito</span>
-          <span>S3 Documents</span>
-          <span>Flashcards + Quiz</span>
+          <span>Hỏi đáp theo tài liệu</span>
+          <span>Tài khoản riêng</span>
+          <span>Thư viện cá nhân</span>
+          <span>Flashcard + Quiz</span>
         </div>
       </section>
 

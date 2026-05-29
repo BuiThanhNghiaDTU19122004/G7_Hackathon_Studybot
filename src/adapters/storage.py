@@ -1,7 +1,7 @@
 """Object storage adapters. Pick via STORAGE_BACKEND env var.
 
 Interface:
-    put(key, data) -> str (returns location URI)
+    put(key, data, content_type=None) -> str (returns location URI)
     put_metadata(key, metadata) -> str
     get(key) -> bytes
     list(prefix="") -> list[str]
@@ -20,8 +20,9 @@ class S3Storage:
         self.s3 = boto3.client("s3", region_name=region)
         self.bucket = bucket
 
-    def put(self, key: str, data: bytes) -> str:
-        self.s3.put_object(Bucket=self.bucket, Key=key, Body=data)
+    def put(self, key: str, data: bytes, content_type: str | None = None) -> str:
+        extra_args = {"ContentType": content_type} if content_type else {}
+        self.s3.put_object(Bucket=self.bucket, Key=key, Body=data, **extra_args)
         return f"s3://{self.bucket}/{key}"
 
     def put_metadata(self, key: str, metadata: dict) -> str:
@@ -65,7 +66,7 @@ class LocalStorage:
         self.base = Path(base_dir)
         self.base.mkdir(parents=True, exist_ok=True)
 
-    def put(self, key: str, data: bytes) -> str:
+    def put(self, key: str, data: bytes, content_type: str | None = None) -> str:
         path = self.base / key
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_bytes(data)

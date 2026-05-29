@@ -62,6 +62,7 @@ class BedrockAI:
         self.agent_runtime = boto3.client("bedrock-agent-runtime", region_name=region)
 
     def invoke(self, prompt: str, **kwargs: Any) -> str:
+        
         max_tokens = kwargs.get("max_tokens", 1024)
         resp = self.runtime.converse(
             modelId=self.model_id,

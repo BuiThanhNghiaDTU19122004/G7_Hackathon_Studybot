@@ -5,11 +5,16 @@ import Sidebar from './Sidebar';
 import { callApi, deleteDocument } from '../api';
 
 const NAV_ITEMS = [
-  { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
-  { id: 'study', label: 'Study Room', icon: BookOpenCheck },
-  { id: 'documents', label: 'Documents', icon: Files },
-  { id: 'insights', label: 'Insights', icon: Activity },
+  { id: 'dashboard', label: 'Trang chính', icon: LayoutDashboard },
+  { id: 'study', label: 'Phòng học', icon: BookOpenCheck },
+  { id: 'documents', label: 'Tài liệu', icon: Files },
+  { id: 'insights', label: 'Tiến độ', icon: Activity },
 ];
+
+const friendlyStatus = (value) => {
+  if (!value || String(value).toLowerCase() === 'checking') return 'Đang kiểm tra';
+  return 'Sẵn sàng';
+};
 
 const Layout = ({ children, selectedDoc, setSelectedDoc, activeView, setActiveView }) => {
   const [isSidebarOpen, setIsSidebarOpen] = useState(false);
@@ -70,10 +75,10 @@ const Layout = ({ children, selectedDoc, setSelectedDoc, activeView, setActiveVi
   const statusPills = useMemo(() => {
     const backends = health?.backends || {};
     return [
-      { label: 'AI', value: backends.ai || 'checking' },
-      { label: 'Storage', value: backends.storage || 'checking' },
-      { label: 'DB', value: backends.userstore || 'checking' },
-      { label: 'Vector', value: backends.vector || 'checking' },
+      { label: 'Trợ lý', value: friendlyStatus(backends.ai) },
+      { label: 'Tài liệu', value: friendlyStatus(backends.storage) },
+      { label: 'Tiến độ', value: friendlyStatus(backends.userstore) },
+      { label: 'Tìm kiếm', value: friendlyStatus(backends.vector) },
     ];
   }, [health]);
 
@@ -104,7 +109,7 @@ const Layout = ({ children, selectedDoc, setSelectedDoc, activeView, setActiveVi
             <button className="product-title product-title-button" onClick={() => setActiveView('dashboard')} type="button">
               <span className="live-dot" />
               <div>
-                <strong>StudyBot Command Center</strong>
+                <strong>StudyBot</strong>
                 <p>{lastSync ? `Đồng bộ lúc ${lastSync}` : 'Đang kết nối workspace...'}</p>
               </div>
             </button>
@@ -128,7 +133,7 @@ const Layout = ({ children, selectedDoc, setSelectedDoc, activeView, setActiveVi
             })}
           </nav>
 
-          <div className="status-pills" aria-label="Backend status">
+          <div className="status-pills" aria-label="Trạng thái học tập">
             {statusPills.map((pill) => (
               <div className="pill" key={pill.label}>
                 <Server size={13} />

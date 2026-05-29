@@ -10,8 +10,14 @@ const MetricCard = ({ icon: Icon, label, value, tone = 'indigo' }) => (
   </motion.div>
 );
 
+const readableStatus = (value) => {
+  if (!value || String(value).toLowerCase() === 'checking') return 'Đang chuẩn bị';
+  return 'Sẵn sàng';
+};
+
 const Dashboard = ({ docs = [], recent = [], health, selectedDoc, setSelectedDoc, setActiveView }) => {
-  const vectorBackend = health?.backends?.vector || 'checking';
+  const searchStatus = readableStatus(health?.backends?.vector);
+  const assistantStatus = readableStatus(health?.backends?.ai);
   const selectedName = selectedDoc?.filename || 'Chưa chọn tài liệu';
 
   return (
@@ -23,15 +29,15 @@ const Dashboard = ({ docs = [], recent = [], health, selectedDoc, setSelectedDoc
           animate={{ opacity: 1, x: 0 }}
           transition={{ duration: 0.28 }}
         >
-          <p className="eyebrow">AI study operating system</p>
-          <h1>Học từ tài liệu của bạn bằng một workspace gọn, nhanh và có ngữ cảnh.</h1>
+          <p className="eyebrow">Không gian học tập AI</p>
+          <h1>Học từ tài liệu của bạn bằng một nơi gọn, nhanh và dễ theo dõi.</h1>
           <p>
-            Upload tài liệu, đồng bộ Knowledge Base, hỏi đáp, tóm tắt, tạo flashcard và quiz trong cùng một luồng học.
+            Tải tài liệu lên, đặt câu hỏi, tóm tắt nội dung, tạo flashcard và luyện trắc nghiệm trong cùng một luồng học.
           </p>
           <div className="hero-actions">
             <button className="primary" type="button" onClick={() => setActiveView('study')}>
               <BookOpenCheck size={17} />
-              Vào Study Room
+              Vào phòng học
             </button>
             <button className="tool-button" type="button" onClick={() => setActiveView('documents')}>
               <Layers3 size={17} />
@@ -50,7 +56,7 @@ const Dashboard = ({ docs = [], recent = [], health, selectedDoc, setSelectedDoc
             <span />
             <span />
             <span />
-            <strong>Study Session</strong>
+            <strong>Phiên học hôm nay</strong>
           </div>
           <div className="console-body">
             <div className="session-line">
@@ -61,26 +67,26 @@ const Dashboard = ({ docs = [], recent = [], health, selectedDoc, setSelectedDoc
               </div>
             </div>
             <div className="session-grid">
-              <div><span>Vector</span><strong>{vectorBackend}</strong></div>
-              <div><span>Docs</span><strong>{docs.length}</strong></div>
-              <div><span>History</span><strong>{recent.length}</strong></div>
+              <div><span>Tìm nội dung</span><strong>{searchStatus}</strong></div>
+              <div><span>Tài liệu</span><strong>{docs.length}</strong></div>
+              <div><span>Câu hỏi gần đây</span><strong>{recent.length}</strong></div>
             </div>
           </div>
         </motion.div>
       </div>
 
       <div className="metrics-grid">
-        <MetricCard icon={FileText} label="Tài liệu đã upload" value={docs.length} tone="cyan" />
-        <MetricCard icon={MessageSquareText} label="Lượt hỏi gần đây" value={recent.length} tone="emerald" />
-        <MetricCard icon={Zap} label="Backend AI" value={health?.backends?.ai || 'checking'} tone="amber" />
-        <MetricCard icon={ShieldCheck} label="Isolation" value="Cognito + metadata" tone="rose" />
+        <MetricCard icon={FileText} label="Tài liệu đã tải lên" value={docs.length} tone="cyan" />
+        <MetricCard icon={MessageSquareText} label="Câu hỏi gần đây" value={recent.length} tone="emerald" />
+        <MetricCard icon={Zap} label="Trợ lý học tập" value={assistantStatus} tone="amber" />
+        <MetricCard icon={ShieldCheck} label="Dữ liệu cá nhân" value="Được tách riêng" tone="rose" />
       </div>
 
       <div className="dashboard-grid">
         <section className="glass-panel">
           <div className="panel-heading">
             <div>
-              <p className="eyebrow">Recent documents</p>
+              <p className="eyebrow">Tài liệu gần đây</p>
               <h2>Chọn nhanh tài liệu để học</h2>
             </div>
             <button className="ghost-action" onClick={() => setActiveView('documents')} type="button">
@@ -89,7 +95,7 @@ const Dashboard = ({ docs = [], recent = [], health, selectedDoc, setSelectedDoc
           </div>
           <div className="compact-list">
             {docs.length === 0 ? (
-              <div className="empty-row">Chưa có tài liệu. Vào Study Room hoặc Documents để upload.</div>
+              <div className="empty-row">Chưa có tài liệu. Vào Phòng học hoặc Tài liệu để tải lên.</div>
             ) : docs.slice(0, 5).map((doc) => (
               <button
                 className={`compact-row ${selectedDoc?.doc_id === doc.doc_id ? 'active' : ''}`}
@@ -102,17 +108,17 @@ const Dashboard = ({ docs = [], recent = [], health, selectedDoc, setSelectedDoc
               >
                 <FileText size={17} />
                 <span>{doc.filename || doc.doc_id}</span>
-                <small>{doc.chars_extracted ? `${doc.chars_extracted} ký tự` : 'ready'}</small>
+                <small>{doc.chars_extracted ? `${doc.chars_extracted} ký tự` : 'sẵn sàng'}</small>
               </button>
             ))}
           </div>
         </section>
 
         <section className="glass-panel accent-panel">
-          <p className="eyebrow">Recommended flow</p>
-          <h2>Luồng demo mượt nhất</h2>
+          <p className="eyebrow">Gợi ý học</p>
+          <h2>Luồng học mượt nhất</h2>
           <div className="flow-steps">
-            {['Upload file sạch', 'Chờ KB sync', 'Chọn đúng tài liệu', 'Tạo flashcard/quiz'].map((step, index) => (
+            {['Tải tài liệu rõ nội dung', 'Đợi hệ thống xử lý', 'Chọn đúng tài liệu', 'Ôn bằng flashcard hoặc quiz'].map((step, index) => (
               <div className="flow-step" key={step}>
                 <strong>{index + 1}</strong>
                 <span>{step}</span>
