@@ -32,17 +32,29 @@ export const callApi = async (path, opts = {}) => {
   return response.json();
 };
 
-export const uploadFile = async (file) => {
-  const formData = new FormData();
-  formData.append('file', file);
+const fileToBase64 = async (file) => {
+  const buffer = await file.arrayBuffer();
+  const bytes = new Uint8Array(buffer);
+  let binary = '';
+  const chunkSize = 0x8000;
+  for (let i = 0; i < bytes.length; i += chunkSize) {
+    binary += String.fromCharCode(...bytes.subarray(i, i + chunkSize));
+  }
+  return btoa(binary);
+};
 
-  const headers = new Headers();
+export const uploadFile = async (file) => {
+  const headers = new Headers({ 'Content-Type': 'application/json' });
   await addAuthHeaders(headers);
 
-  const response = await fetch(`${API_BASE}/upload`, {
+  const response = await fetch(`${API_BASE}/upload-json`, {
     method: 'POST',
     headers,
-    body: formData,
+    body: JSON.stringify({
+      filename: file.name,
+      content_type: file.type || 'application/octet-stream',
+      data_base64: await fileToBase64(file),
+    }),
   });
 
   if (!response.ok) {

@@ -96,12 +96,14 @@ def _extract_text(filename: str, data: bytes) -> str:
     if name.endswith(".pdf"):
         try:
             from pypdf import PdfReader
-        except ImportError:
+        except ImportError as exc:
+            print(f"[upload] pypdf is not available; cannot extract PDF text for {filename}: {exc}")
             return ""
         try:
             reader = PdfReader(io.BytesIO(data))
             return "\n\n".join(page.extract_text() or "" for page in reader.pages)
-        except Exception:
+        except Exception as exc:
+            print(f"[upload] pypdf failed to extract PDF text for {filename}: {type(exc).__name__}: {exc}")
             return ""
     if not name.endswith(TEXT_EXTENSIONS):
         return ""
@@ -294,9 +296,14 @@ def handle_upload(
     kb_metadata = {"user_id": user_id, "doc_id": doc_id, "filename": filename}
     kb_key = ""
     kb_text_location = ""
-    status = "indexed"
+    status = "syncing" if config.vector_backend == "bedrock_kb" else "indexed"
     kb_warning = ""
     kb_sync_ready = config.vector_backend == "bedrock_kb"
+    if filename.lower().endswith(".pdf") and not text.strip():
+        kb_warning = (
+            "PDF đã được gửi vào kho hỏi đáp, nhưng backend không trích được chữ bằng pypdf. "
+            "Nếu Knowledge Base vẫn không đọc được, hãy dùng parser OCR/Data Automation hoặc tải bản TXT/OCR."
+        )
 
     if kb_sync_ready:
         kb_key = _kb_file_key(user_id, doc_id, filename)

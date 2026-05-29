@@ -22,7 +22,7 @@ from src.adapters import factory
 from src import handlers
 
 
-APP_VERSION = "2026-05-29-pdf-original-sync"
+APP_VERSION = "2026-05-29-base64-upload-pdf-safe"
 
 app = FastAPI(title="StudyBot — W7 Capstone Starter")
 
@@ -82,6 +82,12 @@ class QueryRequest(BaseModel):
     doc_id: str | None = None
 
 
+class UploadJsonRequest(BaseModel):
+    filename: str
+    content_type: str | None = None
+    data_base64: str
+
+
 class QuizRequest(BaseModel):
     count: int = 5
     difficulty: str = "medium"
@@ -130,6 +136,30 @@ async def upload(
         userstore=userstore,
         vector_store=vector_store,
         content_type=file.content_type,
+    )
+
+
+@app.post("/upload-json")
+def upload_json(
+    req: UploadJsonRequest,
+    x_user_id: str | None = Header(default=None),
+    authorization: str | None = Header(default=None),
+) -> dict:
+    user_id = _resolve_user_id(x_user_id, authorization)
+    try:
+        data = base64.b64decode(req.data_base64, validate=True)
+    except Exception:
+        raise HTTPException(status_code=400, detail="Invalid base64 file payload")
+    if not data:
+        raise HTTPException(status_code=400, detail="Empty file")
+    return handlers.handle_upload(
+        user_id=user_id,
+        filename=req.filename or "untitled",
+        data=data,
+        storage=storage,
+        userstore=userstore,
+        vector_store=vector_store,
+        content_type=req.content_type,
     )
 
 
