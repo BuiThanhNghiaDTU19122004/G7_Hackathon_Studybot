@@ -22,7 +22,7 @@ from src.adapters import factory
 from src import handlers
 
 
-APP_VERSION = "2026-05-28-selected-doc-query-delete"
+APP_VERSION = "2026-05-29-pdf-original-sync"
 
 app = FastAPI(title="StudyBot — W7 Capstone Starter")
 

@@ -1,5 +1,5 @@
 import React, { useRef, useState } from 'react';
-import { CheckCircle2, FileText, Loader2, Play, RefreshCcw, UploadCloud } from 'lucide-react';
+import { CheckCircle2, FileText, Loader2, Play, RefreshCcw, Trash2, UploadCloud } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { uploadFile } from '../api';
 
@@ -18,9 +18,10 @@ const readableDocStatus = (status) => {
   return 'Đang xử lý';
 };
 
-const Documents = ({ docs = [], selectedDoc, setSelectedDoc, setActiveView, refreshWorkspace, isLoading }) => {
+const Documents = ({ docs = [], selectedDoc, setSelectedDoc, setActiveView, refreshWorkspace, isLoading, onDeleteDoc }) => {
   const inputRef = useRef(null);
   const [uploading, setUploading] = useState(false);
+  const [deletingDocId, setDeletingDocId] = useState('');
   const [notice, setNotice] = useState('');
 
   const handleUpload = async (event) => {
@@ -30,7 +31,7 @@ const Documents = ({ docs = [], selectedDoc, setSelectedDoc, setActiveView, refr
     setNotice(`Đang tải lên ${file.name}...`);
     try {
       const result = await uploadFile(file);
-      setNotice(`Đã tải lên ${result.filename || file.name}. Tài liệu đang được chuẩn bị để học.`);
+      setNotice(result.kb_warning || `Đã tải lên ${result.filename || file.name}. Tài liệu đang được chuẩn bị để học.`);
       window.dispatchEvent(new Event('docs-updated'));
       await refreshWorkspace?.();
     } catch (err) {
@@ -38,6 +39,22 @@ const Documents = ({ docs = [], selectedDoc, setSelectedDoc, setActiveView, refr
     } finally {
       setUploading(false);
       if (inputRef.current) inputRef.current.value = '';
+    }
+  };
+
+  const handleDelete = async (doc) => {
+    if (!doc?.doc_id || deletingDocId) return;
+    const filename = doc.filename || doc.doc_id;
+    if (!window.confirm(`Xóa "${filename}" khỏi thư viện?`)) return;
+    setDeletingDocId(doc.doc_id);
+    setNotice(`Đang xóa ${filename}...`);
+    try {
+      await onDeleteDoc?.(doc);
+      setNotice(`Đã xóa ${filename} khỏi thư viện.`);
+    } catch (err) {
+      setNotice(err.message || 'Không xóa được tài liệu.');
+    } finally {
+      setDeletingDocId('');
     }
   };
 
@@ -129,6 +146,15 @@ const Documents = ({ docs = [], selectedDoc, setSelectedDoc, setActiveView, refr
               >
                 <Play size={15} />
                 Học ngay
+              </button>
+              <button
+                className="tool-button danger"
+                type="button"
+                onClick={() => handleDelete(doc)}
+                disabled={deletingDocId === doc.doc_id}
+              >
+                {deletingDocId === doc.doc_id ? <Loader2 className="spin-icon" size={15} /> : <Trash2 size={15} />}
+                Xóa
               </button>
             </div>
           </motion.article>

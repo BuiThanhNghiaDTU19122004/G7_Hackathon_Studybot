@@ -82,7 +82,7 @@ const Layout = ({ children, selectedDoc, setSelectedDoc, activeView, setActiveVi
     ];
   }, [health]);
 
-  const pageProps = { docs, recent, health, refreshWorkspace, isLoading };
+  const pageProps = { docs, recent, health, refreshWorkspace, isLoading, onDeleteDoc: handleDeleteDoc };
   const content = typeof children === 'function' ? children(pageProps) : children;
 
   return (

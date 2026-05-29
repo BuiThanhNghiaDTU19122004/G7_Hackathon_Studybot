@@ -58,7 +58,7 @@ function App() {
               activeView={activeView}
               setActiveView={setActiveView}
             >
-              {({ docs, recent, health, refreshWorkspace, isLoading }) => {
+              {({ docs, recent, health, refreshWorkspace, isLoading, onDeleteDoc }) => {
                 if (activeView === 'dashboard') {
                   return (
                     <Dashboard
@@ -80,6 +80,7 @@ function App() {
                       setActiveView={setActiveView}
                       refreshWorkspace={refreshWorkspace}
                       isLoading={isLoading}
+                      onDeleteDoc={onDeleteDoc}
                     />
                   );
                 }

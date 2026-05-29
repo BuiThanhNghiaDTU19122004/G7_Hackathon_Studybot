@@ -51,8 +51,38 @@ class S3Storage:
         return resp["Body"].read()
 
     def delete(self, key: str) -> bool:
+        deleted_versions = self._delete_versions(key)
+        if deleted_versions:
+            return True
         self.s3.delete_object(Bucket=self.bucket, Key=key)
         return True
+
+    def _delete_versions(self, key: str) -> int:
+        """Permanently delete all S3 versions for a key when bucket versioning is on."""
+        try:
+            paginator = self.s3.get_paginator("list_object_versions")
+            version_refs = []
+            for page in paginator.paginate(Bucket=self.bucket, Prefix=key):
+                for item in page.get("Versions", []):
+                    if item.get("Key") == key:
+                        version_refs.append({"Key": key, "VersionId": item["VersionId"]})
+                for item in page.get("DeleteMarkers", []):
+                    if item.get("Key") == key:
+                        version_refs.append({"Key": key, "VersionId": item["VersionId"]})
+        except Exception:
+            return 0
+
+        deleted = 0
+        for start in range(0, len(version_refs), 1000):
+            batch = version_refs[start:start + 1000]
+            if not batch:
+                continue
+            self.s3.delete_objects(
+                Bucket=self.bucket,
+                Delete={"Objects": batch, "Quiet": True},
+            )
+            deleted += len(batch)
+        return deleted
 
     def list(self, prefix: str = "") -> list:
         resp = self.s3.list_objects_v2(Bucket=self.bucket, Prefix=prefix)

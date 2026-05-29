@@ -2377,6 +2377,17 @@ body {
     var(--surface);
 }
 
+.documents-page .tool-button.danger {
+  border-color: color-mix(in srgb, #ef4444 34%, var(--border));
+  color: #ef4444;
+}
+
+.documents-page .tool-button.danger:hover:not(:disabled) {
+  border-color: #ef4444;
+  background: color-mix(in srgb, #ef4444 12%, transparent);
+  color: #ef4444;
+}
+
 @media (max-width: 768px) {
   .modern-main .workspace-page {
     padding: 0.85rem;

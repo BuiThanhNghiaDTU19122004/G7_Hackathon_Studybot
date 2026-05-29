@@ -261,7 +261,7 @@ const ChatView = ({ selectedDoc }) => {
     try {
       const result = await uploadFile(file);
       setUploadStatus(`Đã upload ${result.filename || file.name}`);
-      showToast('Tải lên thành công. Tài liệu đang được chuẩn bị để học.', 'success');
+      showToast(result.kb_warning || 'Tải lên thành công. Tài liệu đang được chuẩn bị để học.', result.kb_warning ? 'error' : 'success');
       window.dispatchEvent(new Event('docs-updated'));
       window.setTimeout(() => setUploadStatus(''), 4000);
     } catch (err) {

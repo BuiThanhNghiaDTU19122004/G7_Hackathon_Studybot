@@ -12,8 +12,8 @@ TEXT_EXTENSIONS = (".txt", ".md", ".csv", ".html", ".htm")
 
 
 PROMPT_TEMPLATE = """You are a study assistant. Answer the student's question using ONLY the
-context retrieved from their uploaded lecture notes. Cite the source by chunk
-number where possible. If the context does not contain the answer, say so
+context retrieved from their uploaded lecture notes. Mention source document
+names naturally if needed. If the context does not contain the answer, say so
 plainly. Do not invent information.
 
 CONTEXT:
@@ -26,7 +26,7 @@ ANSWER:"""
 
 
 def _context_from_chunks(chunks: list[dict]) -> str:
-    return "\n\n".join(f"[chunk {i + 1}] {c['text']}" for i, c in enumerate(chunks))
+    return "\n\n".join(f"[Source {i + 1}]\n{c['text']}" for i, c in enumerate(chunks))
 
 
 def _citations_from_chunks(chunks: list[dict]) -> list[dict]:
@@ -126,10 +126,6 @@ def _raw_file_key(user_id: str, doc_id: str, filename: str) -> str:
 
 def _kb_file_key(user_id: str, doc_id: str, filename: str) -> str:
     return _build_storage_key(config.storage_key_prefix or "kb", user_id, doc_id, filename)
-
-
-def _kb_ingest_document(filename: str, data: bytes, extracted_text: str) -> tuple[str, bytes, str]:
-    return filename, data, "original"
 
 
 def _content_type_for_filename(filename: str, fallback: str | None = None) -> str:
@@ -294,20 +290,20 @@ def handle_upload(
     raw_key = _raw_file_key(user_id, doc_id, filename)
     raw_content_type = _content_type_for_filename(filename, content_type)
     location = storage.put(raw_key, data, content_type=raw_content_type)
-    text = "" if filename.lower().endswith((".pdf", ".doc", ".docx")) else _extract_text(filename, data)
+    text = "" if filename.lower().endswith((".doc", ".docx")) else _extract_text(filename, data)
     kb_metadata = {"user_id": user_id, "doc_id": doc_id, "filename": filename}
     kb_key = ""
     kb_text_location = ""
     status = "indexed"
+    kb_warning = ""
     kb_sync_ready = config.vector_backend == "bedrock_kb"
 
     if kb_sync_ready:
-        kb_filename, kb_data, kb_source = _kb_ingest_document(filename, data, text)
-        kb_key = _kb_file_key(user_id, doc_id, kb_filename)
-        kb_content_type = _content_type_for_filename(kb_filename, raw_content_type)
-        kb_text_location = storage.put(kb_key, kb_data, content_type=kb_content_type)
+        kb_key = _kb_file_key(user_id, doc_id, filename)
+        kb_content_type = _content_type_for_filename(filename, raw_content_type)
+        kb_text_location = storage.put(kb_key, data, content_type=kb_content_type)
         if hasattr(storage, "put_metadata"):
-            storage.put_metadata(kb_key, {**kb_metadata, "kb_source": kb_source})
+            storage.put_metadata(kb_key, {**kb_metadata, "kb_source": "original"})
         vector_store.ingest(doc_id=doc_id, text=text, metadata=kb_metadata)
     elif text.strip():
         vector_store.ingest(doc_id=doc_id, text=text, metadata=kb_metadata)
@@ -335,7 +331,7 @@ def handle_upload(
         "kb_s3_key": kb_key if config.vector_backend == "bedrock_kb" and kb_sync_ready else "",
         "kb_text_location": kb_text_location,
         "kb_sync_requested": bool(kb_text_location) and config.vector_backend == "bedrock_kb" and kb_sync_ready,
-        "kb_warning": "",
+        "kb_warning": kb_warning,
         "status": status,
     }
 
@@ -559,7 +555,7 @@ def handle_study_plan(user_id: str, userstore) -> dict:
         "Review the newest uploaded document for 15 minutes.",
         "Ask StudyBot 3 questions about weak points.",
         "Generate flashcards and review the missed concepts.",
-        "Take a short quiz, then re-read the cited chunks for incorrect answers.",
+        "Take a short quiz, then review the cited source documents for incorrect answers.",
     ]
     if len(docs) >= 3:
         plan.append("Compare the top ideas across your uploaded documents.")
